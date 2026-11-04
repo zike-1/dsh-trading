@@ -16,6 +16,16 @@
 | `Zettaranc（Z哥视角）` 分析角色 | zettaranc 技能 | 角色仍可用，但没有技能的规则与命令 |
 | 自选添加框搜索修复、A 股成交量单位修复 | 无 | — |
 
+## 0. 安装（Windows）
+
+1. **建 profile**：按上游 README「快速开始」建 `trading-web` profile。Windows 上 `dsh` 命令默认不在 PATH，它是 DeepSeek Harness 安装目录下的 `resources\runtime\cli\bin\dsh.cmd`，用完整路径调用即可。
+2. **构建本分支**：在本仓库 `local-a-share` 分支运行 `pnpm install` 和 `pnpm build`（Node 版本见上游 README）。
+3. **换成本分支的包**：停掉终端，把 profile 里 `node_modules/@dshtrading/<包名>/lib` 换成本仓库 `packages/<包名>/lib`。
+   - 本 fork 改了 `base`、`bot-api`、`client-ui-trading`、`indicators`、`kit-cn`、`api` 的源码，`dsh-i18n` 会把各包的词典打进自己的产物，也跟着变。建议 profile 里的 `@dshtrading` 包全部替换，避免新旧版本混用。
+   - 替换前先备份原来的 `lib`；先删除目标 `lib` 再复制：它可能是 pnpm store 的硬链接，原地覆盖会把 store 里的文件也改掉。
+4. **启动**：设好 `DSH_HOME` 后运行 `dsh.cmd --profile trading-web --port 8888`，用浏览器打开它输出的地址（地址里的 token 是登录凭证，不要发给别人）。可以把这两步写进一个 `.cmd` 放在桌面，双击启动。终端是网页版，在浏览器里使用，不在 DeepSeek Harness 客户端窗口里。
+5. **本地数据与技能**：本地数据目录见第 1 节；zettaranc 技能的安装见第 2 节。
+
 ## 1. 本地数据目录：`local-data.json`
 
 在 DSH home 目录（`DSH_HOME`，默认见上游文档）下新建 `local-data.json`：
@@ -51,7 +61,7 @@
 准备：
 
 1. 用带 TQ 策略插件的通达信金融终端（安装目录下有 `PYPlugins/sys/tqcenter.py`），并保持它运行。
-2. 安装 zettaranc 技能（见下一节），技能目录放在 `DSH_HOME/skills/zettaranc-perspective`，或用 `DSH_ZT_SKILL_DIR` 指过去。技能的 `.env` 里要配置 `TDX_DIR`。
+2. 安装 zettaranc 技能（按技能仓库 README 的「本地 A 股数据与每日报告」一节），技能目录放在 `DSH_HOME/skills/zettaranc-perspective`，或用 `DSH_ZT_SKILL_DIR` 指过去。依赖必须装在技能目录下的 `.venv` 里：选股页签固定调用 `技能目录/.venv/Scripts/python.exe`，找不到时面板会提示 `zettaranc skill python not found`。技能的 `.env` 里要配置 `TDX_DIR`。
 
 使用：
 
