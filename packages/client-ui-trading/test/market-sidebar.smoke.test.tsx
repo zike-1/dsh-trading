@@ -189,7 +189,14 @@ describe('MarketSidebar 迷你走势编排冒烟', () => {
       { symbol: 'TSLASPOT', name: '特斯拉现货占位' },
     ])
     const view = renderSidebar([{ market: 'crypto', symbol: 'BTCUSDT', name: '比特币' }])
-    // When: 输入查询（全部形态）后把形态过滤切到「永续」（点击循环：全部→现货→永续）
+    // When: 切到加密货币页签（自选页签的添加框不再搜加密货币），输入查询后把形态过滤切到「永续」
+    // （点击循环：全部→现货→永续）
+    const cryptoTab = await waitFor(() => {
+      const button = [...view.container.querySelectorAll('button')].find(item => item.textContent === 'tab.crypto')
+      expect(button).toBeTruthy()
+      return button as HTMLElement
+    })
+    fireEvent.click(cryptoTab)
     const input = view.container.querySelector('input')
     fireEvent.change(input as HTMLInputElement, { target: { value: 'TSLA' } })
     // Then: 过滤前两行都在（现货也可见）
@@ -203,6 +210,43 @@ describe('MarketSidebar 迷你走势编排冒烟', () => {
     await waitFor(() => { expect(view.queryByText('TSLASPOT')).toBeNull() })
     expect(view.getByText('TSLAUSDT-SWAP')).toBeTruthy()
     expect(view.getByText('form.perpEquity')).toBeTruthy()
+  })
+
+  it('用户在自选页签添加时默认是 A 股，搜不到加密货币，纯数字代码也不会被加成加密货币', async () => {
+    // Given: 加密货币和 A 股字典里都有能匹配 588 的条目
+    net.markets = [{ id: 'crypto' }, { id: 'cn' }]
+    setDynamicCatalog('crypto', [{ symbol: '588COIN', name: '588 coin' }])
+    const added: Array<{ market: string; symbol: string }> = []
+    const watchlists = createWatchlistStore()
+    const groups = createWatchlistGroupsStore()
+    const selection: SelectionState = { instrument: null }
+    const view = render(
+      <MarketSidebar
+        t={t}
+        useSelection={<T,>(sel: (value: SelectionState) => T): T => sel(selection)}
+        useWatchlists={<T,>(sel: (value: Watchlists) => T): T => sel(watchlists.getSnapshot())}
+        useGroups={<T,>(sel: (value: ReturnType<typeof groups.getSnapshot>) => T): T => sel(groups.getSnapshot())}
+        addInstrument={(market, item) => { added.push({ market, symbol: item.symbol }) }}
+        removeInstrument={() => {}}
+        selectInstrument={() => {}}
+        openSettings={() => {}}
+        createGroup={async () => ({ ok: false as const, reason: 'unavailable' as const })}
+        renameGroup={async () => ({ ok: false as const, reason: 'unavailable' as const })}
+        deleteGroup={async () => false}
+        assignGroupMember={async () => true}
+        setActiveGroup={() => {}}
+      />,
+    )
+    // When: 在自选页签输入 588200
+    const input = view.container.querySelector('input') as HTMLInputElement
+    fireEvent.change(input, { target: { value: '588200' } })
+    // Then: 加密货币条目不出现在联想里，市场切换按钮显示 A 股
+    expect(view.queryByText('588COIN')).toBeNull()
+    expect(view.getByText('tab.cn')).toBeTruthy()
+    // When: 直接提交
+    fireEvent.submit(input.closest('form') as HTMLFormElement)
+    // Then: 加进 A 股
+    expect(added).toEqual([{ market: 'cn', symbol: expect.stringContaining('588200') }])
   })
 
   it('用户查看自选里的永续行时，行上带形态徽标（现货行不挂标）', async () => {

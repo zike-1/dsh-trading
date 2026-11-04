@@ -24,12 +24,14 @@
 // 用法：
 //   node scripts/ui-functional-check.mjs                 # 自起 trading-web 实例
 //   node scripts/ui-functional-check.mjs --url <url>     # 附加到运行中实例
+//   node scripts/ui-functional-check.mjs --amv-chart     # 仅图表组件门禁，不启动宿主/桌面/CUA
 //   --profile trading-dev  --port 3095  --keep  --screenshot <path>
 //
 // 依赖：node 内置 fetch/WebSocket + 本机 Chrome（DSH_UI_CHROME 可覆盖）。
 // 退出码：0 = 全绿；1 = 存在失败。失败详情逐条打印。
-import { spawn, execFile } from 'node:child_process';
+import { spawn, execFile, execFileSync } from 'node:child_process';
 import { mkdtempSync, rmSync, mkdirSync, writeFileSync } from 'node:fs';
+import { rm as rmAsync } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { setTimeout as sleep } from 'node:timers/promises';
@@ -40,6 +42,13 @@ function argOf(name, fallback) {
   return i >= 0 && i + 1 < args.length ? args[i + 1] : fallback;
 }
 const hasFlag = (name) => args.includes(name);
+
+// 图表组件门禁不启动 DSH、桌面壳或 Computer Use；不等同于完整终端界面验收。
+if (hasFlag('--amv-chart')) {
+  const { runAmvChartCheck } = await import('./amv-chart-check.mjs');
+  await runAmvChartCheck();
+  process.exit(0);
+}
 
 const profile = argOf('--profile', 'trading-web');
 const port = argOf('--port', '3095');
@@ -131,7 +140,11 @@ const chrome = execFile(chromeBin, [
 const killChrome = () => {
   const pid = chrome.pid;
   if (pid !== undefined) {
+    if (process.platform === 'win32') {
+      try { execFileSync('taskkill', ['/PID', String(pid), '/T', '/F'], { stdio: 'ignore' }); } catch {}
+    } else {
     try { process.kill(-pid, 'SIGKILL'); } catch { try { chrome.kill('SIGKILL'); } catch {} }
+    }
   }
   try { rmSync(userDir, { recursive: true, force: true }); } catch {}
 };
@@ -199,6 +212,24 @@ for (let i = 0; i < 30; i++) {
 check('D. 交易面挂载', mounted?.overlay === true && (mounted?.watchlist ?? 0) > 0,
   mounted ? `overlay=${mounted.overlay} watchlistRows=${mounted.watchlist}` : 'eval failed');
 await sleep(4000); // 行情流/注入稳定窗口
+
+if (hasFlag('--amv-live')) {
+  const { runAmvLiveCheck } = await import('./amv-live-check.mjs');
+  try {
+    await runAmvLiveCheck({ send, evaluate: evalJs, click, check });
+  } finally {
+    ws.close();
+    const closed = new Promise(resolve => {
+      const timer = setTimeout(resolve, 5000);
+      chrome.once('close', () => { clearTimeout(timer); resolve(); });
+    });
+    killChrome();
+    await closed;
+    if (!userDir.startsWith(join(tmpdir(), 'dsh-ui-check-'))) throw new Error('Unexpected test browser cleanup path');
+    await rmAsync(userDir, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
+  }
+  process.exit(failures.length > 0 ? 1 : 0);
+}
 
 // --- B. 会话创建链路（composer 可用态） ----------------------------------
 

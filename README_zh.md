@@ -1,5 +1,7 @@
 # dsh-trading — 全市场开源 AI 交易终端与多智能体量化投研平台
 
+> **关于本 fork**：本仓库是 [zhu1090093659/dsh-trading](https://github.com/zhu1090093659/dsh-trading) 的非商业 fork，沿用 PolyForm Noncommercial 1.0.0 许可。新增可选的 A 股本地数据功能：通达信本地日线、活跃市值多空区间背景、通达信公式引擎选股页签、每日选股分组同步、Zettaranc（Z哥视角）分析角色。不配置时全部关闭，配置与使用见 [docs/guides/a-share-local-data.md](docs/guides/a-share-local-data.md)。所有内容均不构成投资建议。
+
 > **当前状态与交接**：见 [docs/current-state.md](docs/current-state.md)（已验收项、必须知道的 fail-closed 不变量、未完成与硬停、验证命令、文档地图）。
 
 [English](README.md) | **简体中文**

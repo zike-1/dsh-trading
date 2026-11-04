@@ -27,12 +27,13 @@ import type { InjectFace, PropsLocale, PropsRuntime } from '@deepseek-ai/dsh-cli
 import type { FoldStore } from './fold-store.ts'
 import type { RightbarStore } from './rightbar-store.ts'
 import { holdingsPanelStore, setHoldingsPanelOpen } from './holdings-store.ts'
-import { IconClock, IconFlash, IconFolder, IconFoldPanel, IconGlobe, IconNewSession, IconPrediction, IconWallet } from './icons.tsx'
+import { IconClock, IconFlash, IconFolder, IconFoldPanel, IconFunnel, IconGlobe, IconNewSession, IconPrediction, IconWallet } from './icons.tsx'
 import { ScheduledTasksPanel } from './ScheduledTasksPanel.tsx'
 import { HoldingsPanel } from './HoldingsPanel.tsx'
 import { FlashPanel } from './FlashPanel.tsx'
 import { MacroPanel } from './MacroPanel.tsx'
 import { PolymarketPanel } from './PolymarketPanel.tsx'
+import { TdxScreenerPanel } from './TdxScreenerPanel.tsx'
 import css from './session-rail.module.css'
 
 export interface SessionRailInjected {
@@ -66,6 +67,8 @@ export function SessionRail({ t, useFolded, useRightbar, startNewSession, toggle
   // 预测市场页签（功能页签 6 号，2026-10-11）：Polymarket FOMC 决议档位隐含概率；
   // 与其余页签互斥（六者同容器二选一）。
   const [predictionOpen, setPredictionOpen] = useState(false)
+  // 选股页签（功能页签 7 号，2026-11-04）：通达信自己的公式引擎选股；与其余页签互斥。
+  const [screenerOpen, setScreenerOpen] = useState(false)
   // 文件页签（功能页签 5 号，2026-09-15）：宿主右侧栏 dock 展开态的镜像
   // （rightbar-store），不是本组件的私有开关——宿主侧入口同样点亮/熄灭。
   const filesOpen = useRightbar(value => value)
@@ -105,40 +108,50 @@ export function SessionRail({ t, useFolded, useRightbar, startNewSession, toggle
     return () => { delete document.body.dataset.dshtradingPredictionOpen }
   }, [predictionOpen])
 
+  useEffect(() => {
+    document.body.dataset.dshtradingScreenerOpen = screenerOpen ? 'on' : 'off'
+    return () => { delete document.body.dataset.dshtradingScreenerOpen }
+  }, [screenerOpen])
+
   // 互斥联动（六页签共用同一容器）：资产面板打开（含 QuoteStage 下单成功
   // 的跨树联动）→ 收定时任务/快讯/宏观/预测市场并收起宿主右侧栏。
   useEffect(() => {
-    if (holdingsOpen) { setTasksOpen(false); setFlashOpen(false); setMacroOpen(false); setPredictionOpen(false); collapseRightbar() }
+    if (holdingsOpen) { setTasksOpen(false); setFlashOpen(false); setMacroOpen(false); setPredictionOpen(false); setScreenerOpen(false); collapseRightbar() }
   }, [holdingsOpen])
 
   // 宿主右侧栏展开（含宿主侧打开，如对话内文件链接）→ 收定时任务/资产/快讯/宏观/预测市场。
   useEffect(() => {
-    if (filesOpen) { setTasksOpen(false); setHoldingsPanelOpen(false); setFlashOpen(false); setMacroOpen(false); setPredictionOpen(false) }
+    if (filesOpen) { setTasksOpen(false); setHoldingsPanelOpen(false); setFlashOpen(false); setMacroOpen(false); setPredictionOpen(false); setScreenerOpen(false) }
   }, [filesOpen])
 
   const toggleTasks = (next: boolean): void => {
     setTasksOpen(next)
-    if (next) { setHoldingsPanelOpen(false); setFlashOpen(false); setMacroOpen(false); setPredictionOpen(false); collapseRightbar() }
+    if (next) { setHoldingsPanelOpen(false); setFlashOpen(false); setMacroOpen(false); setPredictionOpen(false); setScreenerOpen(false); collapseRightbar() }
   }
 
   const toggleFlash = (next: boolean): void => {
     setFlashOpen(next)
-    if (next) { setTasksOpen(false); setHoldingsPanelOpen(false); setMacroOpen(false); setPredictionOpen(false); collapseRightbar() }
+    if (next) { setTasksOpen(false); setHoldingsPanelOpen(false); setMacroOpen(false); setPredictionOpen(false); setScreenerOpen(false); collapseRightbar() }
   }
 
   const toggleMacro = (next: boolean): void => {
     setMacroOpen(next)
-    if (next) { setTasksOpen(false); setHoldingsPanelOpen(false); setFlashOpen(false); setPredictionOpen(false); collapseRightbar() }
+    if (next) { setTasksOpen(false); setHoldingsPanelOpen(false); setFlashOpen(false); setPredictionOpen(false); setScreenerOpen(false); collapseRightbar() }
   }
 
   const togglePrediction = (next: boolean): void => {
     setPredictionOpen(next)
-    if (next) { setTasksOpen(false); setHoldingsPanelOpen(false); setFlashOpen(false); setMacroOpen(false); collapseRightbar() }
+    if (next) { setTasksOpen(false); setHoldingsPanelOpen(false); setFlashOpen(false); setMacroOpen(false); setScreenerOpen(false); collapseRightbar() }
+  }
+
+  const toggleScreener = (next: boolean): void => {
+    setScreenerOpen(next)
+    if (next) { setTasksOpen(false); setHoldingsPanelOpen(false); setFlashOpen(false); setMacroOpen(false); setPredictionOpen(false); collapseRightbar() }
   }
 
   const toggleHoldings = (next: boolean): void => {
     setHoldingsPanelOpen(next)
-    if (next) { setTasksOpen(false); setFlashOpen(false); setMacroOpen(false); setPredictionOpen(false); collapseRightbar() }
+    if (next) { setTasksOpen(false); setFlashOpen(false); setMacroOpen(false); setPredictionOpen(false); setScreenerOpen(false); collapseRightbar() }
   }
 
   /**
@@ -152,6 +165,7 @@ export function SessionRail({ t, useFolded, useRightbar, startNewSession, toggle
     setFlashOpen(false)
     setMacroOpen(false)
     setPredictionOpen(false)
+    setScreenerOpen(false)
     setHoldingsPanelOpen(false)
     collapseRightbar()
   }
@@ -247,6 +261,18 @@ export function SessionRail({ t, useFolded, useRightbar, startNewSession, toggle
       >
         <IconPrediction size={16} />
       </button>
+      {/* 选股页签（功能页签 7 号，2026-11-04）：列出通达信自定义选股公式，按名调用
+          通达信自己的公式引擎；与其余页签互斥，同容器二选一。 */}
+      <button
+        type="button"
+        className={css.button}
+        aria-pressed={screenerOpen}
+        aria-label={t('stage.screener')}
+        title={t('stage.screener')}
+        onClick={() => { toggleScreener(!screenerOpen) }}
+      >
+        <IconFunnel size={16} />
+      </button>
       {tasksOpen && (
         <ScheduledTasksPanel
           t={t}
@@ -276,6 +302,12 @@ export function SessionRail({ t, useFolded, useRightbar, startNewSession, toggle
         <PolymarketPanel
           t={t}
           onClose={() => { setPredictionOpen(false) }}
+        />
+      )}
+      {screenerOpen && (
+        <TdxScreenerPanel
+          t={t}
+          onClose={() => { setScreenerOpen(false) }}
         />
       )}
     </div>

@@ -163,12 +163,15 @@ export async function fetchCnFundamentals(options: CnFundamentalsOptions): Promi
     // spikes/impl-cn-hk/r4-fundamentals/；旧值 68/69 比真实行多算一个空位）。
     const fiftyTwoWeekHigh = num(fields[67])
     const fiftyTwoWeekLow = num(fields[68])
+    // f72 = 流通股本（股），2026-11-03 实测 sh601985 为 18883284867，与 f44 流通市值 ÷ 现价一致。
+    const floatShares = num(fields[72])
 
     const data: StockFundamentals = {
       symbol: canonical,
       name,
       marketCap: totalMarketCapYi ? totalMarketCapYi * 100_000_000 : undefined,
       floatMarketCap: floatMarketCapYi ? floatMarketCapYi * 100_000_000 : undefined,
+      floatShares,
       peTtm,
       peDynamic,
       pb,

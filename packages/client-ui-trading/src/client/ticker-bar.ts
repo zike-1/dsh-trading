@@ -47,6 +47,16 @@ const TRADABLE_STATUS: ReadonlySet<MarketLocaleKey> = new Set(['status.trading',
 /** 一根日 K 的名义时长。 */
 const DAY_MS = 86_400_000
 
+/**
+ * 快照量换成 K 线的成交量单位。A 股报价的量是股（腾讯报价把手 ×100），日 K 的量是手
+ * （腾讯 K 线和本地通达信都是手），不换的话当日那根放大 100 倍、把整列成交量压扁（2026-11-03）。
+ * 港股、美股两边都是股，原样。
+ */
+function barVolume(market: MarketId, volume: number | undefined): number | undefined {
+  if (volume === undefined) return undefined
+  return market === 'cn' ? volume / 100 : volume
+}
+
 export interface TickerBarContext {
   /** 标的所属市场（决定时区/交易时段口径）。 */
   readonly market: MarketId
@@ -125,7 +135,7 @@ export function withTickerBar(prev: Kline[], ticker: Ticker, context: TickerBarC
     high: price,
     low: price,
     close: price,
-    volume: ticker.volume ?? 0,
+    volume: barVolume(context.market, ticker.volume) ?? 0,
     closeTime: openTime + DAY_MS - 1,
   }
   return [...prev, forming]
@@ -185,7 +195,7 @@ function inheritFormingEnvelope(rows: Kline[], prev: Kline[], restored: Kline[],
     high: Math.max(prevLast.high, restoredLast.high),
     low: Math.min(prevLast.low, restoredLast.low),
     close: restoredLast.close,
-    volume: last.ticker.volume ?? prevLast.volume,
+    volume: barVolume(context.market, last.ticker.volume) ?? prevLast.volume,
     closeTime: restoredLast.closeTime,
   }
   return [...restored.slice(0, -1), inherited]

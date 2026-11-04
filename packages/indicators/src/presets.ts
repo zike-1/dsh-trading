@@ -197,6 +197,14 @@ const VOLUME_DOWN_COLOR = 'rgba(43, 164, 113, 0.55)'
 export function presetDefinitions(): IndicatorDefinition[] {
   return [
     {
+      id: 'amv-regime', title: '活跃市值多空区间', pane: 'main', params: [],
+      renderMode: 'background',
+      markets: ['cn'], defaultApplyScope: { cn: { enabled: true, intervals: ['1d'] } },
+      description: '指南针本地 0AMV 收盘区间：+4% / 两日算术合计 +4% 转多，-2.3% 转空，空优先。仅日 K；缺失和最新数据之后留白。',
+      // 背景由主图 primitive 渲染，不生成价格序列、不改变自动价格范围。
+      compute: () => [],
+    },
+    {
       // MA：一组最多 6 条均线（周期可调，默认 5/10/20/30/60/120，0 表示隐藏）。
       id: 'ma',
       pane: 'main',

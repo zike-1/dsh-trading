@@ -4,7 +4,7 @@
  * + presetDefinitions 注册（模拟指标插件桥接后的状态）。
  */
 import { describe, expect, it } from 'vitest'
-import { createIndicatorRegistry, presetDefinitions } from '@dshtrading/indicators'
+import { createIndicatorRegistry, isInstanceVisibleOn, presetDefinitions } from '@dshtrading/indicators'
 import { createChartStateStore } from '../src/client/chart-state.ts'
 
 function makeStore() {
@@ -60,28 +60,37 @@ describe('chart-state store', () => {
     })
   })
 
-  it('setSymbolVisibility：symbol 级隐藏/显示，其它标的与全局 params 不受影响（symbol visibility）', () => {
+  it('用户关掉指标后换任何股票都不显示，打开后都显示，参数不丢', () => {
+    // Given 默认的 MA
     const store = makeStore()
-    // 隐藏当前标的：实例保留，仅 hiddenScopes 记录
-    store.setSymbolVisibility('ma', 'us', 'AAPL', false)
-    expect(store.instanceFor('ma')).toEqual({
-      id: 'ma',
-      params: { n1: 5, n2: 10, n3: 20, n4: 30, n5: 60, n6: 120 },
-      hiddenScopes: ['us:AAPL'],
-    })
+    // When 关掉
+    store.setGlobalVisibility('ma', false)
+    // Then 所有股票都隐藏，实例和参数保留
+    const hidden = store.instanceFor('ma')!
+    expect(hidden.params).toEqual({ n1: 5, n2: 10, n3: 20, n4: 30, n5: 60, n6: 120 })
+    expect(isInstanceVisibleOn(hidden, 'cn', '000860.SZ')).toBe(false)
+    expect(isInstanceVisibleOn(hidden, 'cn', '600036.SH')).toBe(false)
+    expect(isInstanceVisibleOn(hidden, 'us', 'AAPL')).toBe(false)
+    expect(isInstanceVisibleOn(hidden)).toBe(false)
     expect(store.isActive('ma')).toBe(true)
-    // 追加另一标的隐藏 → 再显示第一个：只清该标的，其余保留
-    store.setSymbolVisibility('ma', 'hk', '00700.HK', false)
-    store.setSymbolVisibility('ma', 'us', 'AAPL', true)
-    expect(store.instanceFor('ma')?.hiddenScopes).toEqual(['hk:00700.HK'])
-    // 逐个清空后字段整体消失
-    store.setSymbolVisibility('ma', 'hk', '00700.HK', true)
-    expect(store.instanceFor('ma')).toEqual({
-      id: 'ma', params: { n1: 5, n2: 10, n3: 20, n4: 30, n5: 60, n6: 120 },
-    })
-    // 未激活 id：静默 no-op
-    store.setSymbolVisibility('rsi', 'us', 'AAPL', false)
+    // When 打开
+    store.setGlobalVisibility('ma', true)
+    // Then 字段整体消失
+    expect(store.instanceFor('ma')).toEqual({ id: 'ma', params: { n1: 5, n2: 10, n3: 20, n4: 30, n5: 60, n6: 120 } })
+    // And 未激活 id 静默 no-op
+    store.setGlobalVisibility('rsi', false)
     expect(store.isActive('rsi')).toBe(false)
+  })
+
+  it('用户打开指标时，以前按股票留下的隐藏记录一并清掉', () => {
+    // Given host 下发的旧数据：只在一只股票上隐藏
+    const store = makeStore()
+    store.applyHost([{ id: 'ma', params: {}, hiddenScopes: ['cn:000860.SZ'] }])
+    expect(isInstanceVisibleOn(store.instanceFor('ma')!, 'cn', '000860.SZ')).toBe(false)
+    // When 打开
+    store.setGlobalVisibility('ma', true)
+    // Then 那只股票也显示
+    expect(isInstanceVisibleOn(store.instanceFor('ma')!, 'cn', '000860.SZ')).toBe(true)
   })
 
   it('未知 id 的 toggle/setParams 为无 default/clamp 原样落盘（防御手改 localStorage）', () => {

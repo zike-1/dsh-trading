@@ -6,7 +6,7 @@
  */
 import { describe, expect, it } from 'vitest'
 import { defineConfig } from '../src/tool-surface-config.ts'
-import { familyOf, resolveDeny } from '../src/tool-surface.ts'
+import { apply, familyOf, resolveDeny } from '../src/tool-surface.ts'
 
 const schemas = [
   { name: 'cn_get_ticker' },
@@ -73,6 +73,26 @@ describe('resolveDeny', () => {
     // Then 取首个下划线之前的部分，无下划线时整名即族名
     expect(familyOf('cn_get_ticker')).toBe('cn')
     expect(familyOf('read')).toBe('read')
+  })
+})
+
+describe('apply', () => {
+  it('admin：晚注册的工具也会被裁掉，已裁过的不重复', () => {
+    // Given 预设挂载时只有 tasks_list 已注册
+    const registered = [{ name: 'tasks_list' }, { name: 'cn_get_ticker' }]
+    const calls: string[][] = []
+    let onChange = (): void => {}
+    const ctx = {
+      tools: { schemas: () => registered, restrict: (filter: { deny: string[] }) => { calls.push(filter.deny) } },
+      on: (_event: string, listener: () => void) => { onChange = listener },
+    }
+    // When 挂载后又注册一个同族工具，并再触发一次没有新工具的变更
+    apply(ctx as never, { denyFamilies: ['tasks'] })
+    registered.push({ name: 'tasks_run' })
+    onChange()
+    onChange()
+    // Then 两次收窄各只含新名字，第三次没有调用
+    expect(calls).toEqual([['tasks_list'], ['tasks_run']])
   })
 })
 

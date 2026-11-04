@@ -46,6 +46,84 @@ describe('桥层三个读面的缓存协议（提案第 3 项）', () => {
     }
   })
 
+  it('用户连续输入搜索词时，不支持关键词的数据源只下载一次全量，之后在本地过滤', async () => {
+    // Given 忽略 query、每次都返回全量的名册服务（币安的行为）
+    let calls = 0
+    const service = fakeService({
+      listInstruments: async () => {
+        calls += 1
+        const others = Array.from({ length: 300 }, (_, i) => ({ symbol: `ALT${i}USDC`, name: `ALT${i}/USDC` }))
+        return [{ symbol: 'BTCUSDT', name: 'BTC/USDT' }, { symbol: 'ETHUSDT', name: 'ETH/USDT' }, ...others]
+      },
+    })
+    const bridge = new TradingBridge(createBridgeHost({ legacy: () => service }))
+    // When 连续搜三个词
+    const first = await bridge.symbols('futures', 'btc')
+    const second = await bridge.symbols('futures', 'eth')
+    const third = await bridge.symbols('futures', '国电电力')
+    // Then 只打一次上游，每次结果都只含匹配项
+    expect(calls).toBe(1)
+    expect(first.symbols.map(s => s.symbol)).toEqual(['BTCUSDT'])
+    expect(second.symbols.map(s => s.symbol)).toEqual(['ETHUSDT'])
+    expect(third.symbols).toEqual([])
+  })
+
+  it('用户搜 A 股时支持关键词的数据源每次都按关键词查，不缓存', async () => {
+    // Given 按 query 过滤的名册服务（腾讯的行为）
+    const queries: Array<string | undefined> = []
+    const service = fakeService({
+      listInstruments: async (query?: string) => {
+        queries.push(query)
+        return query === '国电电力' ? [{ symbol: '600795.SH', name: '国电电力' }] : []
+      },
+    })
+    const bridge = new TradingBridge(createBridgeHost({ legacy: () => service }))
+    // When 先后搜两个词
+    const hit = await bridge.symbols('futures', '国电电力')
+    await bridge.symbols('futures', '510300')
+    // Then 每次都带关键词打上游
+    expect(hit.symbols.map(s => s.symbol)).toEqual(['600795.SH'])
+    expect(queries).toEqual(['国电电力', '510300'])
+  })
+
+  it('用户打开页面先拉了 A 股热门名册，再搜国电电力时仍按关键词查上游', async () => {
+    // Given 无参只给热门子集、带 query 才按关键词检索的名册服务（腾讯的行为）
+    const queries: Array<string | undefined> = []
+    const service = fakeService({
+      listInstruments: async (query?: string) => {
+        queries.push(query)
+        if (query === undefined) return [{ symbol: '600036.SH', name: '招商银行' }]
+        return query === '国电电力' ? [{ symbol: '600795.SH', name: '国电电力' }] : []
+      },
+    })
+    const bridge = new TradingBridge(createBridgeHost({ legacy: () => service }))
+    // When 页面挂载先拉无参名册，随后用户搜国电电力
+    await bridge.symbols('futures')
+    const hit = await bridge.symbols('futures', '国电电力')
+    // Then 热门子集不拿来过滤，关键词照常打到上游并命中
+    expect(hit.symbols.map(s => s.symbol)).toEqual(['600795.SH'])
+    expect(queries).toEqual([undefined, '国电电力'])
+  })
+
+  it('用户用拼音搜到不含字面关键词的结果后，A 股搜索仍按关键词查上游', async () => {
+    // Given 拼音 zggh 返回中国广核（名称和代码都不含 zggh）的名册服务
+    const queries: Array<string | undefined> = []
+    const service = fakeService({
+      listInstruments: async (query?: string) => {
+        queries.push(query)
+        if (query === 'zggh' || query === '中国广核') return [{ symbol: '003816.SZ', name: '中国广核' }]
+        return []
+      },
+    })
+    const bridge = new TradingBridge(createBridgeHost({ legacy: () => service }))
+    // When 先拼音搜索，再搜中文名
+    await bridge.symbols('futures', 'zggh')
+    const name = await bridge.symbols('futures', '中国广核')
+    // Then 拼音那次的结果没被当成全量名册缓存，中文名照常打上游并命中
+    expect(name.symbols.map(s => s.symbol)).toEqual(['003816.SZ'])
+    expect(queries).toEqual(['zggh', '中国广核'])
+  })
+
   it('用户翻 tab 取同一标的基本面时同键并发只打一轮上游，失败不进缓存', async () => {
     // Given 一个计数的基本面服务：正常符号给快照，失败符号直接抛
     const calls = new Map<string, number>()

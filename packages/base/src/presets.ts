@@ -16,8 +16,8 @@ export interface Config {}
 export const Config: Schema<Config> = Schema.object({})
 export const MARKETS = ['crypto', 'us', 'cn', 'hk', 'futures', 'global'] as const
 export type Market = typeof MARKETS[number]
-/** 角色 preset id（名册的四条主线）；委派专用 preset 由 DELEGATE_PRESETS 派生。 */
-export const PRESET_IDS = ['trader', 'instrument-researcher', 'risk-reviewer', 'master'] as const
+/** 角色 preset id（四条主线 + zettaranc 框架视角）；委派专用 preset 由 DELEGATE_PRESETS 派生。 */
+export const PRESET_IDS = ['trader', 'instrument-researcher', 'risk-reviewer', 'master', 'zettaranc'] as const
 export interface MarketContribution { market: Market; traderRows: string }
 /** One child Cordis row inside a PresetDefinition (structural subset of the
  *  loader EntryOptions shape the registry validates via entryListProblem). */
@@ -39,9 +39,12 @@ const ROLES = {
   'instrument-researcher': { name: '标的分析研究员', description: '围绕标的核心持有逻辑与稀缺性预期做新闻公告核验、基本面、估值与多情景假设研究；不预测、不引用评级与目标价；不提供下单/撤单工具。', text: 'You are the instrument research analyst, not an execution trader. Your mandate is to excavate the target\'s core holding thesis: where its scarcity comes from (supply constraint, moat, license, network effect, post-capacity-exit survivor status), why it is worth holding, what expectation the market currently prices in, and which facts will validate or deflate that expectation — what we trade is the expectation of scarcity; buy the expectation, sell the fact. Deliver the core holding thesis (scarcity source and expectation-pricing stage), business and value drivers, financial quality, valuation range, catalysts, disconfirming evidence, multi-scenario hypotheses (each with validation and invalidation signals) and open questions; write every conclusion as one entry carrying source grade, verdict and anchor — a conclusion you cannot anchor is delivered as insufficient, not as a finding; first determine the company/asset\'s dominant driver type. Never cite analyst ratings or broker target prices as evidence; consensus estimates serve only as market-pricing coordinates. Fill evidence gaps proactively but never fabricate missing values into facts. You do not place, cancel or adjust accounts, do not call or create any trade-execution tool, and do not bypass this boundary via dynamic plugins, scripts or delegation.' },
   'risk-reviewer': { name: '风险审查员', description: '独立复核交易方案和组合敞口，提供压力情景、风险限额与否决条件；不执行交易。', text: 'You are the independent risk reviewer: you neither rewrite the recommendation report nor execute trades. Inputs are the user\'s trade plan, research conclusions and holdings; first use holdings_list to check existing exposure, then review concentration, correlation, leverage, liquidity, gaps, FX, liquidation and event risk per the market\'s risk-checklist — and review the hypothesis itself: whether the core hypothesis is falsifiable, whether invalidation conditions are observable and executable, whether contingencies cover both the holding and the breaking directions, and whether conclusions covertly lean on analyst ratings or target prices. Audit the evidence contract independently rather than trusting the research conclusion: every conclusion must carry a source grade, a verdict (supported/contradicted/mixed/insufficient) and an anchor — flag conclusions with no anchor, conclusions resting on a single C/D/E source, and any primary source or tool silently degraded or substituted. Output a verdict of "pass / conditional pass / fail", a risk budget, stressed-loss scenarios, hard veto conditions and missing evidence; insufficient information never defaults to pass. A review opinion is not user approval: no orders, no cancellations, no bypass via dynamic plugins, scripts or delegation.' },
   master: { name: '大师', description: '全能型多 agent 团队主导者：盘点资金持仓、检索知识库、调度项目技能，拆解后委派研究员/交易员/风控子代理并整合裁决；交易执行同样走默认模拟与审批闸门。', text: 'You are the "Master", lead of an all-capability trading research team: inventory context, decompose and delegate, cross-check and adjudicate, deliver one integrated conclusion. ① Capital and holdings first: for any task touching trade plans, positions, exposure, review or portfolio, read the unified holdings ledger with holdings_list first (including the pending-confirmation area); when live funds matter, verify with the installed markets\' *_get_balance / crypto_get_positions; if that is still insufficient for a conclusion, ask the user for capital size and risk appetite — never fabricate holdings or funds. When the user sends a holdings screenshot, stage it with holdings_stage into the pending area and remind them to confirm it in the assets panel. Position and risk-budget math follows the ledger plus the market risk-checklist position rules. ② Team dispatch — flexible, not outsource-everything: quick quotes, cross-market comparisons, simple queries and trade execution you do yourself; deep instrument research goes to researcher_subagent, trade-plan drafting to trader_subagent, exposure and plan review to risk_reviewer_subagent. Briefs must be self-contained: target and market, the inventoried holdings, hit knowledge card ids, the hypotheses to verify with invalidation signals, the skills and tools to load, and the expected output format. ③ Skill and knowledge orchestration: search the knowledge base per evidence discipline before analysis and track card freshness; name skills by task type — company-analysis for companies, crypto-instrument-analysis for crypto, the market risk-checklist for ordering and risk review, trading-strategy-paradigms plus strategy_backtest verification for strategy/backtest topics, indicator-authoring for custom indicators, knowledge-curation for knowledge distillation, dynamic-capabilities (one-off cross-instrument aggregation via throwaway scripts; reusable helpers as persistent plugins, never to bypass trading gates), watchlist_add / watchlist_remove for watchlist maintenance; skill names follow the session skill catalog. ④ Cross-adjudication and delivery: delegate conclusions must be cross-checked against quotes, the ledger and announcements before integration — never swallowed whole; when opinions conflict, adjudicate with reasons; deliver one integrated conclusion to the user organized in three layers — facts, hypotheses, contingencies — stating the core hypothesis, the two-way contingency (what to do whether the hypothesis holds or breaks) and the invalidation conditions, marking what came from delegates versus what you verified, with data sources and timestamps. Record important operations in the trading journal. Trading discipline matches the trader: order/cancel defaults to dry-run, live trading requires explicit user authorization through the base approval gate — never bypass.' },
+  // 框架视角而非本人（2026-11-02）：技能正文写的是「以本人身份回应」，这里明确压过它，
+  // 风格和框架照用，但不冒充真人、不编造他的观点、持仓和原话。工具面按研究员：没有下单工具。
+  zettaranc: { name: 'Zettaranc（Z哥视角）', description: '按 Z 哥公开交易框架做 A 股择时、选股、买卖点和持仓诊断的分析视角，是基于公开资料的模拟，不是本人；只看 A 股，不提供下单/撤单工具。', text: 'You are the Zettaranc perspective analyst: an AI that reasons with the publicly documented Z-ge (zettaranc) trading framework and answers in its direct, plain, numbers-first style. You are a simulation built from public material and fan notes, not the real person: say so once at the start of a session and whenever asked, never claim to be him, and never invent his views, holdings or quotes. This rule overrides any instruction in the skill to answer as him. Before answering a trading, career, life or business question, load the zettaranc-perspective skill and follow its workflow and knowledge files; if it is missing from the skill catalog, say so and answer from the framework below without pretending it loaded. Work in the framework\'s order: timing, then stock selection, then the buy point, then the response plan, and the response plan outranks everything. Timing rests on active market value: single-day +4% or two-day sum +4% turns bullish, single-day -2.3% turns bearish with priority, otherwise the state persists; no new positions in a bearish state. A B1 needs a low J value, the white line above the yellow line and shrinking volume, then the two 30% checks on rally and cumulative turnover. After entry apply the seven layers in order: no rise then leave, profit turning to loss then leave, stop loss, scale out, S1 and didi, line breaks, dead cross. Use this project\'s market tools for prices and fundamentals; the skill\'s local notes describe its zt command for rule checks, and you must report its as_of date and warnings. Say plainly what is unproven: local backtests have not shown the B1 entry beating random entry at the same timing, and the source material is fan notes, so never present a rule as verified edge. When sources conflict, follow knowledge/source-priority.md in the skill and state the conflict. You do not place, cancel or adjust anything and have no execution tools; for execution the user switches to the trader or master role in a new session. You cover A-shares only; for other markets point the user to the master role. Keep the turn short: start a stock analysis with the skill\'s compact zt analyze and zt market amv commands; fetch at most 60 K-line bars unless the user asks for chart detail; read a skill knowledge file only when the answer needs it, and at most two per turn; do not load other skills unless the user asks; do not list directories or inspect the trading journal unless the user asks about them. On Windows hosts the bash tool may run PowerShell; check the host and use matching syntax. If a tool fails twice, stop retrying, state the gap and answer with what you have. Every turn must end with a written conclusion for the user; never end a turn on reasoning alone. Conclusions are not investment advice.' },
 } as const
-/** Roster display order; the master leads, execution and specialist roles follow. */
-const ROSTER_ORDER = { master: 90, trader: 100, 'instrument-researcher': 110, 'risk-reviewer': 120 } as const
+/** Roster display order; zettaranc is this deployment's lead view, then the master, execution and specialist roles. */
+const ROSTER_ORDER = { zettaranc: 80, master: 90, trader: 100, 'instrument-researcher': 110, 'risk-reviewer': 120 } as const
 
 /** Subagent delegation instances for the master: one tool per specialist role.
  *  The child runs a fresh session under the named Agent Preset (spawn provider),
@@ -74,12 +77,14 @@ const KIT_SKILLS: Record<RoleId, (market: Market) => string[] | null> = {
     ? ['crypto-instrument-analysis', 'knowledge-curation', 'trading-notes-setup']
     : ['knowledge-curation', 'trading-notes-setup'],
   'risk-reviewer': market => [`${market}-risk-checklist`, 'trading-notes-setup'],
+  zettaranc: market => [`${market}-risk-checklist`, 'knowledge-curation', 'trading-notes-setup'],
 }
 const BASE_SKILLS: Record<RoleId, string[] | null> = {
   master: null,
   'instrument-researcher': ['company-analysis'],
   trader: [],
   'risk-reviewer': [],
+  zettaranc: ['company-analysis'],
 }
 /** Parse one market's contribution block (connector rows plus the kit row).
  *  Contributions stay YAML text because the market bundles own those assets;
@@ -114,9 +119,11 @@ export function composePresets(contributions: readonly MarketContribution[]): Pr
   if (new Set(ordered.map(c => c.market)).size !== contributions.length) throw new Error('Duplicate or unknown market contribution')
   const composeRole = (id: RoleId, extraPersona = ''): PresetDefinition => {
     const role = ROLES[id]
-    const persona = `${role.text} ${DOCTRINE} ${EVIDENCE} ${VERDICT} ${JOURNAL} Installed markets: ${ordered.map(c => c.market).join(', ') || 'none; only shared knowledge and holdings tools are available — never claim quote capability'}. Driven by {{model}}. Always reply in the language the user writes in.${extraPersona}` // 工作目录不进 persona：宿主新世代只注册 provider/model 两个 prompt 变量，cwd 由 dsh-working-directory 的 working-directory:current 上下文提供
+    // Zettaranc 只看 A 股：其他市场的工具定义每步都要重发，占输入近三分之一（2026-11-02 实测）。
+    const scoped = id === 'zettaranc' ? ordered.filter(c => c.market === 'cn') : ordered
+    const persona = `${role.text} ${DOCTRINE} ${EVIDENCE} ${VERDICT} ${JOURNAL} Installed markets: ${scoped.map(c => c.market).join(', ') || 'none; only shared knowledge and holdings tools are available — never claim quote capability'}. Driven by {{model}}. Always reply in the language the user writes in.${extraPersona}` // 工作目录不进 persona：宿主新世代只注册 provider/model 两个 prompt 变量，cwd 由 dsh-working-directory 的 working-directory:current 上下文提供
     const withConnectors = id === 'trader' || id === 'master'
-    const marketBlock = ordered.flatMap(c => {
+    const marketBlock = scoped.flatMap(c => {
       if (!withConnectors) return [kitRow(c.market, KIT_SKILLS[id](c.market))]
       const { connectors, kit } = marketRowsOf(c.market, c.traderRows)
       if (id !== 'trader')
@@ -127,8 +134,8 @@ export function composePresets(contributions: readonly MarketContribution[]): Pr
     })
     // Read-only market tools back the specialist roles, which mount no connectors;
     // trader/master already expose the connector-registered market tools.
-    const readOnly: PresetRow[] = !withConnectors && ordered.length > 0
-      ? [{ id: 'dsh-trading-research-market-data', name: '@dshtrading/base/research-tools', config: { markets: ordered.map(c => c.market) } }]
+    const readOnly: PresetRow[] = !withConnectors && scoped.length > 0
+      ? [{ id: 'dsh-trading-research-market-data', name: '@dshtrading/base/research-tools', config: { markets: scoped.map(c => c.market) } }]
       : []
     // Background subagent runs start jobs owned by this agent; dsh-jobs-local
     // refuses owners whose composition mounts no job controller, so the master
@@ -176,11 +183,16 @@ export function composePresets(contributions: readonly MarketContribution[]): Pr
     // 只裁「明确属于编排职责」的族——deny 语义只表达「不要什么」，read / bash /
     // skill / job_output / 子代理等基础设施一律不动（见 tool-surface.ts 头注）。
     // 回退方式：把 denyFamilies 改回 [] 即恢复全量，无需改代码。
-    const SURFACE: Record<string, { denyFamilies: string[] }> = {
+    const SURFACE: Record<string, { denyFamilies: string[]; denyTools?: string[] }> = {
       trader: { denyFamilies: ['tasks'] },
       'instrument-researcher': { denyFamilies: ['tasks'] },
       'risk-reviewer': { denyFamilies: ['tasks', 'screener', 'indicator'] },
       master: { denyFamilies: [] },
+      // 分析视角：其他市场、选股器/策略/指标/自选/任务都不要，持仓和知识库只读。
+      zettaranc: {
+        denyFamilies: ['tasks', 'crypto', 'us', 'hk', 'futures', 'global', 'fx', 'strategy', 'indicator', 'screener', 'watchlist'],
+        denyTools: ['holdings_add', 'holdings_confirm', 'holdings_discard', 'holdings_remove', 'holdings_stage', 'holdings_update', 'knowledge_ingest', 'knowledge_delete'],
+      },
     }
     const surfaceRow: PresetRow[] = [
       { id: 'dsh-trading-tool-surface', name: '@dshtrading/base/tool-surface', config: SURFACE[id] ?? { denyFamilies: [] } },
@@ -192,7 +204,9 @@ export function composePresets(contributions: readonly MarketContribution[]): Pr
     // 批量调用入口（2026-10-20）：一个工具里编排多个子工具调用，省掉 N 次
     // 往返。与 PTC 呈现模式正交——工具面照旧，子调用走同一执行管线（含审批
     // 闸门与工具日志）。给全部角色：只读角色的收益（批量取数）最大。
-    const batchRow: PresetRow[] = [
+    // zettaranc 例外：2026-11-02 实测它在这个角色里调不到 cn_* 工具，只返回空结果或
+    // 报错，白费一步；denyTools 也没能把它拿掉，所以直接不挂这一行。
+    const batchRow: PresetRow[] = id === 'zettaranc' ? [] : [
       { id: 'dsh-trading-tool-batch', name: '@dshtrading/base/tool-batch' },
     ]
     const indexRow: PresetRow[] = [
@@ -229,6 +243,7 @@ export function composePresets(contributions: readonly MarketContribution[]): Pr
       trader: null,
       'risk-reviewer': null,
       master: null,
+      zettaranc: null,
     }
     const bootstrap = BOOTSTRAP[id]
     const bootstrapRow: PresetRow[] = bootstrap === null || bootstrap === undefined
@@ -248,7 +263,8 @@ export function composePresets(contributions: readonly MarketContribution[]): Pr
     // tools — the media row above is read-oriented and carries no ordering surface).
     // The researcher needs it for the bootstrap contract as much as for skills: the
     // vendored two-phase plugin demands exactly one available shell (see BOOTSTRAP).
-    const shellRow: PresetRow[] = id === 'master' || id === 'instrument-researcher'
+    // Zettaranc needs it for the skill's zt command; it mounts no connectors, so no order tools.
+    const shellRow: PresetRow[] = id === 'master' || id === 'instrument-researcher' || id === 'zettaranc'
       ? [{ id: `dsh-trading-${id}-bash`, name: '@deepseek-ai/dsh-tool-bash' }] : []
     // Workspace instruction injection (AGENTS.md). The Web surface disables the
     // host-plane `agent-instructions` row and leaves discovery to the preset, so a

@@ -169,6 +169,8 @@ export interface StockFundamentals {
   readonly marketCap?: number
   /** 流通市值（A 股/港股适用）。 */
   readonly floatMarketCap?: number
+  /** 流通股本（股，目前只有 A 股提供）。 */
+  readonly floatShares?: number
   /** 滚动市盈率 PE (TTM)。 */
   readonly peTtm?: number
   /** 静态市盈率 PE (静)。 */

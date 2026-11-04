@@ -10,7 +10,7 @@
  * 该 id 的可点行，此分支 UI 不可达，防御手改 localStorage）。
  */
 import type { IndicatorInstance, IndicatorMarketScope, IndicatorRegistry } from '@dshtrading/indicators'
-import { symbolScopeKey, withHiddenScopes, withMarketScope } from '@dshtrading/indicators'
+import { withGlobalVisibility, withMarketScope } from '@dshtrading/indicators'
 import { createObservable, readJson, writeJson } from './store.ts'
 import type { WritableObservable } from './store.ts'
 
@@ -30,10 +30,10 @@ export interface ChartStateStore extends WritableObservable<ChartState> {
    */
   setParams(id: string, params: Record<string, number>, scopeKey?: string): void
   /**
-   * 按标的可见性（GUI 复选框，symbol 级）：visible=false 记隐藏、true 清隐藏；
-   * 实例缺席静默（挂载走 togglePreset）。隐藏 ≠ 取消激活，其它标的不受影响。
+   * 全局可见性（GUI 复选框和指标条）：对所有标的生效，实例缺席静默（挂载走 togglePreset）。
+   * 隐藏 ≠ 取消激活，参数和按标的覆盖都保留。
    */
-  setSymbolVisibility(id: string, market: string, symbol: string, visible: boolean): void
+  setGlobalVisibility(id: string, visible: boolean): void
   /**
    * 设置某市场的适用范围（GUI 适用范围面板）：`scope === undefined` 删除该市场
    * 条目（落回「全部级别应用」）。实例缺席静默（挂载走 togglePreset）。不适用
@@ -103,12 +103,11 @@ export function createChartStateStore(registry: IndicatorRegistry): ChartStateSt
       store.update((current) => ({ instances: current.instances.filter(instance => instance.id !== id) }))
       persist()
     },
-    setSymbolVisibility(id, market, symbol, visible) {
+    setGlobalVisibility(id, visible) {
       store.update((current) => {
         const existing = current.instances.find(instance => instance.id === id)
         if (existing === undefined) return current
-        const next = withHiddenScopes(existing, symbolScopeKey(market, symbol), visible)
-        if (next === existing) return current
+        const next = withGlobalVisibility(existing, visible)
         return { instances: current.instances.map(instance => instance.id === id ? next : instance) }
       })
       persist()

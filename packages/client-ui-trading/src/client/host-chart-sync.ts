@@ -4,7 +4,7 @@
  * - 启动同步：GET /chart/indicators → host 有行则以 host 为准覆盖本地 observable；
  *   host 为空且本地 localStorage 有存量 → 一次性迁移导入（POST /chart/indicators/import，
  *   host 非空时服务端拒绝，幂等）→ 重拉 host。
- * - 变更 host-first：togglePreset / setParams / setSymbolVisibility / setMarketScope / removeInstance
+ * - 变更 host-first：togglePreset / setParams / setGlobalVisibility / setMarketScope / removeInstance
  *   先写 host，成功后才更新本地 observable（localStorage 由原 store 持久化，降级为缓存镜像）。
  * - SSE：'chart' 失效信号 → 重拉 host 覆盖本地（indicator_activate/deactivate 工具
  *   写入、indicators/plugin emit 或其它标签页变更）。
@@ -94,12 +94,12 @@ export function wireHostChartSync(options: HostChartSyncOptions): () => void {
       else console.warn('[dsh-trading] chart param update failed on host — local state unchanged')
     })()
   }
-  const originalSetSymbolVisibility = chart.setSymbolVisibility.bind(chart)
-  chart.setSymbolVisibility = (id: string, market: string, symbol: string, visible: boolean): void => {
+  const originalSetGlobalVisibility = chart.setGlobalVisibility.bind(chart)
+  chart.setGlobalVisibility = (id: string, visible: boolean): void => {
     void (async () => {
-      // symbol visibility：GUI 只写 symbol 级（整市场隐藏走工具/桥）。
-      const ok = await putChartActivation(id, undefined, { market, symbol, visible })
-      if (ok) originalSetSymbolVisibility(id, market, symbol, visible)
+      // GUI 只写全局（按市场、按标的隐藏走工具/桥）。
+      const ok = await putChartActivation(id, undefined, { visible })
+      if (ok) originalSetGlobalVisibility(id, visible)
       else console.warn('[dsh-trading] chart visibility update failed on host — local state unchanged')
     })()
   }

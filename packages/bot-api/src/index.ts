@@ -38,6 +38,8 @@ import {
   type TradeRegistryLike,
 } from './bridge.ts'
 import { createGuiApprovalSeat, type GuiAgentRegistryLike, type GuiApprovalEventsLike, type GuiApprovalHost, type GuiApprovalSeat } from './gui-approval.ts'
+import { startReportPicksWatcher } from './report-picks.ts'
+import { createZtTdxRunner } from './tdx-formula.ts'
 import { attachEventStream } from './sse.ts'
 import { TaskActionError } from './tasks/ledger.ts'
 import { registerTasksTools } from './tasks/tools.ts'
@@ -253,8 +255,22 @@ export function apply(ctx: Context): void {
       predictionFeed: webCtx.get('tradingPredictionFeed', false) as import('./bridge.ts').PredictionFeedLike | undefined,
       // GUI 实盘动作逐动作审批（2026-10-12）：缺席 = 无审批面 → 实盘 fail-closed。
       guiApproval,
+      // 通达信选股公式（2026-11-04）：经 zettaranc 技能命令行调通达信自己的公式引擎（只读）；
+      // 技能目录默认是 DSH home 下 skills/zettaranc-perspective（指向已安装技能的目录联接）。
+      tdxFormula: createZtTdxRunner({
+        skillDir: process.env.DSH_ZT_SKILL_DIR ?? path.join(dshHomeDir(), 'skills', 'zettaranc-perspective'),
+      }),
     })
     const bridge = new TradingBridge(host)
+    // 每日选股报告 → 「今日选股」分组（2026-11-03）：zettaranc 技能写 report-picks.json，
+    // 这里按分钟检查、经桥的分组方法落库，再发 watchlists 失效让打开的页面刷新。
+    ctx.effect(() => startReportPicksWatcher({
+      bridge,
+      file: process.env.DSH_REPORT_PICKS_FILE ?? path.join(dshHomeDir(), 'report-picks.json'),
+      stateFile: path.join(dshHomeDir(), 'report-picks-state.json'),
+      onChanged: () => eventsOf()?.emit('watchlists'),
+      log: message => console.log(message),
+    }), 'dsh-trading-client-ui-trading: report picks → watchlist group')
 
     // 右缘竖栏「定时任务」Host 面：文件账本 + cron 调度 + 会话 runner（web 宿主
     // 专属；目录锁被另一个活宿主持有时降级为 503——特性不挂、宿主照跑）。宿主

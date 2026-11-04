@@ -71,6 +71,18 @@ export interface CustomIndicatorLoader {
  */
 export const DEFAULT_RETRY_DELAYS_MS: readonly number[] = [1000, 2000, 4000]
 
+/**
+ * 页面加载时的试算熔断（2026-11-02 实测 ZXB1 时有时无）：计时从建 Worker 算起，首屏
+ * 主线程繁忙时 Worker 启动就可能超过默认的 100ms，已落盘的合法指标被判成死循环、又不
+ * 重试，于是这次加载整个消失。这里只需要防死循环，放宽不会放过它。
+ */
+const LOAD_TRIAL_TIMEOUT_MS = 3000
+
+/** 默认校验：带放宽后的熔断。validator 是测试注入缝。 */
+export function validateStoredIndicator(raw: unknown, validator: typeof validateCustomIndicatorAsync = validateCustomIndicatorAsync): Promise<ValidationResult> {
+  return validator(raw, { trialTimeoutMs: LOAD_TRIAL_TIMEOUT_MS })
+}
+
 const defaultSchedule = (delayMs: number, run: () => void): (() => void) => {
   const timer = setTimeout(run, delayMs)
   return () => { clearTimeout(timer) }
@@ -89,7 +101,7 @@ const describeError = (error: unknown): string => {
 /** 建一个加载器（纯工厂，不启动任何请求——由调用方决定首拉时机）。 */
 export function createCustomIndicatorLoader(options: CustomIndicatorLoadOptions = {}): CustomIndicatorLoader {
   const fetchCustom = options.fetchCustom ?? fetchCustomIndicators
-  const validate = options.validate ?? validateCustomIndicatorAsync
+  const validate = options.validate ?? validateStoredIndicator
   const register = options.register ?? defaultRegister
   const schedule = options.schedule ?? defaultSchedule
   const retryDelaysMs = options.retryDelaysMs ?? DEFAULT_RETRY_DELAYS_MS

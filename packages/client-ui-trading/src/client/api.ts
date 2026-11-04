@@ -3,11 +3,13 @@
  * half registers the route behind the browser-auth fence; same-origin fetch
  * carries the auth cookie by default).
  */
+import type { AmvHistory } from '@dshtrading/indicators'
 import type { AccountBalance, DerivativesData, DerivativesHistory, Kline, MarketId, MarketInfo, Order, Orderbook, Position, TickerOutcome, TradeFill, TradeTick } from './types.ts'
 import type { FundamentalsPackage, InstrumentAssetClass, InstrumentForm, SouthboundHoldingHistory } from '@dshtrading/api'
 import type { CustomIndicatorRecord, IndicatorApplyScope, IndicatorInstance } from '@dshtrading/indicators'
 import type { KnowledgeCard } from '@dshtrading/knowledge'
 import type { CustomStrategyRecord, CustomScreenerRecord } from '@dshtrading/strategies'
+import type { FloatShareEvent } from './float-history.ts'
 import type { FxSnapshot, HoldingsBaseCurrency, HoldingsBookSnapshot, NewHolding, NewHoldingInput } from './holdings-types.ts'
 import type { GuiOrderApprovalContext } from './gui-approval.ts'
 
@@ -295,9 +297,9 @@ export async function cancelGuiOrder(
  */
 export type SymbolInfo = { symbol: string; name?: string; form?: InstrumentForm; assetClass?: InstrumentAssetClass }
 
-export async function fetchSymbols(market: MarketId, q?: string): Promise<SymbolInfo[]> {
+export async function fetchSymbols(market: MarketId, q?: string, signal?: AbortSignal): Promise<SymbolInfo[]> {
   const query = new URLSearchParams({ market, ...(q ? { query: q } : {}) })
-  const wire = await getJson<{ symbols: SymbolInfo[] }>(`/dshtrading/api/symbols?${query.toString()}`)
+  const wire = await getJson<{ symbols: SymbolInfo[] }>(`/dshtrading/api/symbols?${query.toString()}`, signal)
   return Array.isArray(wire.symbols) ? wire.symbols : []
 }
 
@@ -447,6 +449,70 @@ export async function fetchMacroRates(signal?: AbortSignal): Promise<ClientMacro
   try {
     const wire = await getJson<{ ok: boolean; items: ClientMacroRateEntry[] }>('/dshtrading/api/macro/rates', signal)
     return Array.isArray(wire.items) ? wire.items : []
+  } catch {
+    return null
+  }
+}
+
+/* ------------------------------------------------------------------ */
+/* 通达信选股公式（2026-11-04）：桥经 zettaranc 技能调通达信自己的公式引擎     */
+/* ------------------------------------------------------------------ */
+
+export interface ClientTdxFormula {
+  /** 通达信里的公式名（调用用这个）。 */
+  code: string
+  name: string
+}
+
+/** 通达信没开时 available:false + 原因（不是「没有公式」）。 */
+export type ClientTdxFormulas =
+  | { available: true; formulas: ClientTdxFormula[] }
+  | { available: false; reason: string }
+
+export interface ClientTdxPick {
+  /** 600795.SH 形式。 */
+  code: string
+  name: string
+}
+
+export type ClientTdxSelect =
+  | { available: true; formula: string; tradeDate: string; scanned: number; totalHits: number; picks: ClientTdxPick[] }
+  | { available: false; reason: string }
+
+/** 通达信自定义选股公式列表（桥 /tdx/formulas）。请求失败 → null。 */
+export async function fetchTdxFormulas(signal?: AbortSignal): Promise<ClientTdxFormulas | null> {
+  try {
+    const wire = await getJson<{ ok: boolean; available: boolean; formulas?: ClientTdxFormula[]; reason?: string }>('/dshtrading/api/tdx/formulas', signal)
+    if (wire.available !== true) return { available: false, reason: wire.reason ?? '' }
+    return { available: true, formulas: Array.isArray(wire.formulas) ? wire.formulas : [] }
+  } catch {
+    return null
+  }
+}
+
+/** 用通达信引擎跑一个选股公式（桥 POST /tdx/select；boards 空 = 全部 A 股）。请求失败 → null。 */
+export async function runTdxSelect(formula: string, boards: readonly string[]): Promise<ClientTdxSelect | null> {
+  try {
+    const response = await fetch('/dshtrading/api/tdx/select', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ formula, boards }),
+    })
+    if (!response.ok) return null
+    const wire = await response.json() as {
+      ok?: boolean; available?: boolean; reason?: string; formula?: string; tradeDate?: string
+      scanned?: number; totalHits?: number; picks?: ClientTdxPick[]
+    }
+    if (wire.ok !== true) return null
+    if (wire.available !== true) return { available: false, reason: wire.reason ?? '' }
+    return {
+      available: true,
+      formula: wire.formula ?? formula,
+      tradeDate: wire.tradeDate ?? '',
+      scanned: wire.scanned ?? 0,
+      totalHits: wire.totalHits ?? 0,
+      picks: Array.isArray(wire.picks) ? wire.picks : [],
+    }
   } catch {
     return null
   }
@@ -910,14 +976,13 @@ export async function fetchChartActivations(): Promise<IndicatorInstance[]> {
 /**
  * 挂载/更新一个激活实例（PUT /chart/indicators；未知 id → ok:false，转 false）。
  * issue #72：带 scope（market+symbol）时写该标的的参数覆盖，不动全局 params。
- * symbol visibility：scope 带 visible 时为可见性写（market 必带，symbol 可选——
- * 缺省即整市场），params 缺省。
+ * 可见性写：scope 带 visible，params 缺省。不带 market 是全局开关，只带 market 是整市场。
  * applyScope：传该实例的完整适用范围表（整表替换；空表清空该字段，落回全部应用）。
  */
 export async function putChartActivation(
   id: string,
   params?: Record<string, number>,
-  scope?: { market: string; symbol?: string; visible?: boolean },
+  scope?: { market?: string; symbol?: string; visible?: boolean },
   applyScope?: IndicatorApplyScope,
 ): Promise<boolean> {
   try {
@@ -929,7 +994,7 @@ export async function putChartActivation(
         ...(params !== undefined ? { params } : {}),
         ...(applyScope !== undefined ? { applyScope } : {}),
         ...(scope !== undefined ? {
-          market: scope.market,
+          ...(scope.market !== undefined ? { market: scope.market } : {}),
           ...(scope.symbol !== undefined ? { symbol: scope.symbol } : {}),
           ...(scope.visible !== undefined ? { visible: scope.visible } : {}),
         } : {}),
@@ -1293,4 +1358,19 @@ export function createTradingBridgeService(): TradingBridgeService {
     fetchSymbols,
     subscribeTradingEvents,
   }
+}
+
+/** 本机通达信的历史流通股本（万股，日期升序）；没有通达信或读取失败时返回 undefined。 */
+export async function fetchFloatHistory(symbol: string, signal?: AbortSignal): Promise<readonly FloatShareEvent[] | undefined> {
+  try {
+    const query = new URLSearchParams({ symbol })
+    const wire = await getJson<{ available: boolean; events: FloatShareEvent[] }>(`/dshtrading/api/float-history?${query.toString()}`, signal)
+    return wire.available && wire.events.length > 0 ? wire.events : undefined
+  } catch {
+    return undefined
+  }
+}
+
+export function fetchAmvRegime(): Promise<AmvHistory> {
+  return getJson<AmvHistory>('/dshtrading/api/amv-regime')
 }

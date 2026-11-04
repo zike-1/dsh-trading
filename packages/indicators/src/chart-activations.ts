@@ -134,14 +134,30 @@ export function effectiveInstanceParams(
   return instance.params
 }
 
+/** hiddenScopes 里表示「所有标的都隐藏」的作用域。隐藏不卸载，参数和按标的覆盖都保留。 */
+export const GLOBAL_HIDDEN_SCOPE = '*'
+
+/**
+ * 全局开关（GUI 指标条和选择器，2026-11-03）：一只股票上设好的显示状态对所有股票生效。
+ * 打开时同时清掉按标的、按市场的隐藏记录，否则开关对某些股票看起来不起作用。
+ */
+export function withGlobalVisibility(instance: IndicatorInstance, visible: boolean): IndicatorInstance {
+  if (!visible) return { ...instance, hiddenScopes: [GLOBAL_HIDDEN_SCOPE] }
+  const rest = { ...instance }
+  delete rest.hiddenScopes
+  return rest
+}
+
 /**
  * 实例对某标的的可见性：hiddenScopes 命中「market」或「${market}:${symbol}」任一
  * 作用域即隐藏；无隐藏记录默认可见（存量名册零迁移）。market 缺失（GUI 无聚焦
- * 标的）按可见处理——调用方此时走全局开关语义。
+ * 标的）按可见处理。{@link GLOBAL_HIDDEN_SCOPE} 对所有标的生效，包括无聚焦标的。
  */
 export function isInstanceVisibleOn(instance: IndicatorInstance, market?: string, symbol?: string): boolean {
   const scopes = instance.hiddenScopes
-  if (scopes === undefined || scopes.length === 0 || market === undefined) return true
+  if (scopes === undefined || scopes.length === 0) return true
+  if (scopes.includes(GLOBAL_HIDDEN_SCOPE)) return false
+  if (market === undefined) return true
   if (scopes.includes(market)) return false
   if (symbol !== undefined && scopes.includes(symbolScopeKey(market, symbol))) return false
   return true

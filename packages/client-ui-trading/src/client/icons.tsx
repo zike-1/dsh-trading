@@ -207,6 +207,15 @@ export function IconGlobe({ size = 16 }: { size?: number }): ReactElement {
   )
 }
 
+/** 漏斗（选股页签）。 */
+export function IconFunnel({ size = 16 }: { size?: number }): ReactElement {
+  return (
+    <svg viewBox="0 0 16 16" width={size} height={size} aria-hidden="true" fill="none" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M2.25 3h11.5L9.5 8.25v4.5L6.5 14V8.25z" />
+    </svg>
+  )
+}
+
 /** 勾选（分组选中态）。 */
 export function IconCheck({ size = 12 }: { size?: number }): ReactElement {
   return (

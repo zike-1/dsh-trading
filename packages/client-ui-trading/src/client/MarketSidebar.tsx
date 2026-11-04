@@ -68,6 +68,12 @@ const PRICE_POLL_MS = 8000
 /** 日内走势序列轮询节拍：分钟 bar 粒度下 60s 足够「活」，又对公共端温和。 */
 const SERIES_POLL_MS = 60 * 1000
 const DAILY_FALLBACK_LIMIT = 32
+/**
+ * 自选页签添加框能搜、能加的市场，A 股排第一。用户要求先禁掉加密货币（2026-11-03）：币安名册
+ * 不认关键词、一次下载 3-11 秒，搜不到 A 股代码时还会把 588200 这样的数字当成加密货币加进去。
+ * 加密货币页签自己的添加框不受影响。
+ */
+const WATCH_ADD_MARKETS: MarketId[] = ['cn', 'hk', 'us', 'futures', 'global']
 
 /** 标的行键（market:symbol）。 */
 export function rowKey(market: string, symbol: string): string {
@@ -114,7 +120,7 @@ export function MarketSidebar({
   const [prices, setPrices] = useState<Record<string, Ticker>>({})
   const [series, setSeries] = useState<Record<string, ReferenceSeries>>({})
   const [draft, setDraft] = useState('')
-  const [addMarket, setAddMarket] = useState<MarketId>('crypto')
+  const [addMarket, setAddMarket] = useState<MarketId>('cn')
   /** 形态过滤（2026-10-08 加密永续 P5）：仅 crypto 目标市场生效，缺省「全部」= 不过滤。 */
   const [formFilter, setFormFilter] = useState<'all' | InstrumentForm>('all')
   const [catalogVersion, setCatalogVersion] = useState(0)
@@ -145,7 +151,7 @@ export function MarketSidebar({
 
   // 动态标的全集预取（Issue #15）：切页签或挂载时触发，成功后注入 catalog 并刷新联想
   useEffect(() => {
-    const targetMarkets: MarketId[] = tab === 'watch' ? ['crypto', 'us', 'cn', 'hk', 'futures', 'global'] : [tab]
+    const targetMarkets: MarketId[] = tab === 'watch' ? WATCH_ADD_MARKETS : [tab]
     let cancelled = false
     for (const m of targetMarkets) {
       fetchSymbols(m)
@@ -219,7 +225,7 @@ export function MarketSidebar({
   // 形态过滤按 crypto 生效（2026-10-08 P5）：catalog 的 searchSymbols/searchAllMarkets 同参。
   const suggestions = useMemo(
     () => (tab === 'watch'
-      ? searchAllMarkets(draft, 8, activeForm)
+      ? searchAllMarkets(draft, 32, activeForm).filter(entry => WATCH_ADD_MARKETS.includes(entry.market)).slice(0, 8)
       : searchSymbols(tab, draft, 8, activeForm).map(entry => ({ ...entry, market: tab }))),
     [tab, draft, catalogVersion, activeForm],
   )
@@ -231,10 +237,13 @@ export function MarketSidebar({
     if (raw.length < 1) return
 
     let cancelled = false
+    // 输入变了就真正取消上一轮请求：只忽略结果的话，慢市场的请求仍占着浏览器对同一主机的
+    // 连接（约 6 条），后面的 A 股搜索排队，看起来就是「搜不到」（2026-11-03）。
+    const controller = new AbortController()
     const timer = setTimeout(() => {
-      const targetMarkets: MarketId[] = tab === 'watch' ? ['cn', 'hk', 'us', 'crypto', 'futures', 'global'] : [tab]
+      const targetMarkets: MarketId[] = tab === 'watch' ? WATCH_ADD_MARKETS : [tab]
       for (const m of targetMarkets) {
-        fetchSymbols(m, raw)
+        fetchSymbols(m, raw, controller.signal)
           .then((items) => {
             if (cancelled || items.length === 0) return
             const valid = items.filter(it =>
@@ -253,6 +262,7 @@ export function MarketSidebar({
     return () => {
       cancelled = true
       clearTimeout(timer)
+      controller.abort()
     }
   }, [draft, tab, activeForm])
 
@@ -556,9 +566,8 @@ export function MarketSidebar({
                   className={css.addMarketToggle}
                   title={t('sidebar.addMarketHint')}
                   onClick={() => {
-                    const order: MarketId[] = ['crypto', 'us', 'cn', 'hk', 'futures', 'global']
-                    const index = order.indexOf(addMarket)
-                    setAddMarket(order[(index + 1) % order.length] ?? 'crypto')
+                    const index = WATCH_ADD_MARKETS.indexOf(addMarket)
+                    setAddMarket(WATCH_ADD_MARKETS[(index + 1) % WATCH_ADD_MARKETS.length] ?? 'cn')
                   }}
                 >
                   {t(MARKET_TAB_KEY[addMarket])}

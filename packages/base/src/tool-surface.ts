@@ -69,7 +69,16 @@ export function apply(ctx: Context, rawConfig: unknown): void {
     schemas(scope?: unknown): ToolSchemaLike[]
     restrict(filter: { allow?: readonly string[]; deny?: readonly string[] }): () => void
   }
-  const deny = resolveDeny(tools.schemas(), config)
-  // 空裁剪必须跳过：restrict 明确拒绝空 filter。
-  if (deny.length > 0) tools.restrict({ deny })
+  const denied = new Set<string>()
+  const refresh = (): void => {
+    const fresh = resolveDeny(tools.schemas(), config).filter(name => !denied.has(name))
+    // 空裁剪必须跳过：restrict 明确拒绝空 filter。
+    if (fresh.length === 0) return
+    for (const name of fresh) denied.add(name)
+    tools.restrict({ deny: fresh })
+  }
+  refresh()
+  // host 平面的工具可能晚于预设注册（2026-11-02 实测 tasks_* 漏裁），注册面变化时补裁。
+  // restrict 自身也会触发这个事件，上面的 denied 集合保证它停在第二轮。
+  ctx.on('tools/change' as never, refresh as never)
 }

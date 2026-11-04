@@ -21,6 +21,9 @@
  * - 2026-10-23：/klines 的换源放宽为「结构性缺能力 或 运行时故障」——前者沿候选序走到底，
  *   后者全程最多兜底 1 次；限流/坏符号/交易所业务错误仍原样抛。整段同源、provider 如实标注。
  */
+import { readLocalAmv } from './local-amv.ts'
+import { readLocalFloatHistory } from './local-gbbq.ts'
+import { localDailyKlines } from './local-klines.ts'
 import { instrumentFormOf } from '@dshtrading/api'
 import type { ActiveBuySnapshot, AccountBalance, DerivativesData, DerivativesHistory, FundamentalsPackage, InstrumentAssetClass, InstrumentForm, InstrumentRef, Interval, Kline, KlineCapability, MacroCalendarEntry, MacroRateEntry, MarketDataService, NewsAggregator, NewsItem, Order, Orderbook, OrderRequest, Position, PredictionFeed, PredictionMeeting, SouthboundHoldingHistory, StockFundamentals, Ticker, TradeFill, TradeService, TradeTick } from '@dshtrading/api'
 import { aggregateNews as aggregateCnNews, fetchCnFundamentalsPackage } from '@dshtrading/kit-cn'
@@ -28,7 +31,7 @@ import { aggregateNews as aggregateHkNews, fetchHkFundamentalsPackage } from '@d
 import { aggregateNews as aggregateUsNews, fetchUsFundamentalsPackage } from '@dshtrading/kit-us'
 import { aggregateNews as aggregateCryptoNews, fetchCryptoFundamentalsPackage } from '@dshtrading/kit-crypto'
 import type { ChartActivationStore, CustomIndicatorRecord, CustomIndicatorStore, IndicatorApplyScope, IndicatorInstance } from '@dshtrading/indicators'
-import { carryInstanceExtras, clampActivationParams, createMemoryChartActivationStore, createMemoryCustomIndicatorStore, defaultActivationInstance, resolveIndicatorSpec, sanitizeApplyScope, sanitizeInstance, symbolScopeKey, withHiddenScopes } from '@dshtrading/indicators'
+import { carryInstanceExtras, clampActivationParams, createMemoryChartActivationStore, createMemoryCustomIndicatorStore, defaultActivationInstance, resolveIndicatorSpec, sanitizeApplyScope, sanitizeInstance, symbolScopeKey, withGlobalVisibility, withHiddenScopes } from '@dshtrading/indicators'
 import type { KnowledgeCard, KnowledgeCardStore } from '@dshtrading/knowledge'
 import { createMemoryKnowledgeCardStore } from '@dshtrading/knowledge'
 import type { CustomStrategyRecord, CustomStrategyStore } from '@dshtrading/strategies'
@@ -54,6 +57,7 @@ import { createFxService } from '@dshtrading/holdings/fx'
 import { GuiApprovalDeniedError, type GuiApprovalSeat, type GuiLiveAction } from './gui-approval.ts'
 import { TtlCache } from './ttl-cache.ts'
 import { mergeActiveBuyPoints, readActiveBuySnapshots, shanghaiDate, type ActiveBuyWire } from './active-buy.ts'
+import type { TdxFormulaRunnerLike, TdxFormulasWire, TdxSelectWire } from './tdx-formula.ts'
 
 /** 本桥支持的市场（与连接器服务键一一对应）。 */
 export type MarketId = 'crypto' | 'us' | 'cn' | 'hk' | 'futures' | 'global'
@@ -181,6 +185,8 @@ export function createBridgeHost(services: {
   predictionFeed?: PredictionFeedLike | undefined
   /** GUI 实盘动作的逐动作审批座位（2026-10-12；缺席 = 无审批面 → GUI 实盘 fail-closed）。 */
   guiApproval?: GuiApprovalSeat | undefined
+  /** 通达信选股公式（2026-11-04；缺席 = 没装 zettaranc 技能 → TRADING_NOT_IMPLEMENTED）。 */
+  tdxFormula?: TdxFormulaRunnerLike | undefined
 }): BridgeHost {
   return {
     getMarketService: market => {
@@ -210,6 +216,7 @@ export function createBridgeHost(services: {
     macroFeed: services.macroFeed,
     predictionFeed: services.predictionFeed,
     guiApproval: services.guiApproval,
+    tdxFormula: services.tdxFormula,
   }
 }
 
@@ -285,6 +292,11 @@ export interface BridgeHost {
    * 审批面没挂不是放行的理由。
    */
   guiApproval?: GuiApprovalSeat | undefined
+  /**
+   * 通达信选股公式（2026-11-04）：经 zettaranc 技能命令行调用通达信自己的公式引擎，
+   * 只读（公式列表 + 批量选股）。缺席 → TRADING_NOT_IMPLEMENTED。
+   */
+  tdxFormula?: TdxFormulaRunnerLike | undefined
 }
 
 /** 一条 kline 能力声明（wire 形状；client 半按同一份契约消费）。 */
@@ -776,6 +788,8 @@ export const SYMBOLS_CACHE_TTL_MS = 30 * 60 * 1000
  * 即与改动前的裸 Map「永不驱逐」等价——上限只是 TtlCache 的必要参数，不是驱逐策略。
  */
 export const SYMBOLS_CACHE_MAX = MARKET_IDS.length
+/** 一次联想最多十几条；搜索返回超过这么多条才可能是忽略关键词的全量名册（币安几千条）。 */
+const FULL_LIST_MIN = 200
 
 /**
  * 基本面数据包缓存 TTL（5分钟）：财报级/日级数据，非 tick；同键 in-flight 去重
@@ -834,6 +848,8 @@ const KLINE_RUNTIME_FALLBACK_LIMIT = 1
 
 export class TradingBridge {
   private readonly symbolsCache = new TtlCache<SymbolInfoWire[]>(SYMBOLS_CACHE_TTL_MS, SYMBOLS_CACHE_MAX)
+  /** 搜索时确认过「忽略关键词、总返回全量」的市场：这些市场的搜索在全量缓存里本地过滤。 */
+  private readonly queryIgnoredMarkets = new Set<string>()
   private readonly fundamentalsCache = new TtlCache<StockFundamentals>(FUNDAMENTALS_CACHE_TTL_MS, FUNDAMENTALS_CACHE_MAX)
   private readonly fundamentalsInflight = new Map<string, Promise<StockFundamentals>>()
   /** 港股通持股历史缓存（2026-10-13；键 = `${market}:${symbol}`，同 fundamentals 模式）。 */
@@ -1002,6 +1018,13 @@ export class TradingBridge {
     }
     const candidates = this.#resolveKlinesSources(id, interval as Interval, limit)
     if (candidates.length === 0) throw new BridgeProtocolError(400, `market ${market} is not installed`)
+    // A 股日线优先读本机通达信，接口只补缺的几天。provider 仍报行情源：客户端靠这个字段判断
+    // 实时报价能不能并进当天那根，报成别的值实时价就并不进来了。
+    if (id === 'cn' && interval === '1d') {
+      const head = candidates[0] as KlineSourceCandidate
+      const local = await localDailyKlines(trimmed, limit, (code, count) => head.service.getKlines(code, '1d' as Interval, count))
+      if (local !== null) return head.provider === undefined ? { klines: local } : { klines: local, provider: head.provider }
+    }
     let lastError: unknown = undefined
     // 结构性缺能力与运行时故障各算各的：前者不设上界（既有语义），后者硬上界 1 次。
     // 两个计数/判断分开写，不用 candidates.slice(0, 2) 那种一刀切——那会把结构路径也削短。
@@ -1075,19 +1098,27 @@ export class TradingBridge {
     }
     const trimmed = query?.trim().toLowerCase()
     if (trimmed) {
+      const matches = (s: SymbolInfoWire): boolean =>
+        s.symbol.toLowerCase().includes(trimmed) || (s.name !== undefined && s.name.toLowerCase().includes(trimmed))
+      // 币安等连接器不支持关键词，每次都下载整份交易对（2026-11-03 实测一次 3-11 秒），每输入
+      // 一个字打一次会拖住浏览器的连接，A 股搜索排不上。确认过忽略关键词的市场才在全量缓存里本地过滤；
+      // 支持关键词的市场（腾讯 A 股）无参名册只是热门子集，不能拿来过滤。
+      if (this.queryIgnoredMarkets.has(market)) {
+        const cachedAll = this.symbolsCache.getFresh(market, Date.now())
+        if (cachedAll !== undefined && cachedAll.length > 0) return { symbols: cachedAll.filter(matches) }
+      }
       try {
         const list = await (service as unknown as { listInstruments(q?: string): Promise<InstrumentRef[]> }).listInstruments(trimmed)
-        let symbols: SymbolInfoWire[] = Array.isArray(list) ? list.map(toSymbolInfoWire) : []
-        // 防御性兜底：若连接器实现未做服务端过滤（忽略 query 返回全量），本地执行严格匹配
-        const isServerFiltered = symbols.length === 0 || symbols.every(s =>
-          s.symbol.toLowerCase().includes(trimmed) || (s.name !== undefined && s.name.toLowerCase().includes(trimmed))
-        )
-        if (!isServerFiltered) {
-          symbols = symbols.filter(s =>
-            s.symbol.toLowerCase().includes(trimmed) || (s.name !== undefined && s.name.toLowerCase().includes(trimmed))
-          )
+        const symbols: SymbolInfoWire[] = Array.isArray(list) ? list.map(toSymbolInfoWire) : []
+        // 连接器没按关键词过滤：本地严格匹配。腾讯按拼音、简称模糊匹配，结果不一定字面包含关键词，
+        // 所以只有条数远超一次联想时才认定「忽略关键词的全量」，记下市场并写进全量缓存。
+        const isServerFiltered = symbols.length === 0 || symbols.every(matches)
+        if (isServerFiltered) return { symbols }
+        if (symbols.length > FULL_LIST_MIN) {
+          this.queryIgnoredMarkets.add(market)
+          this.symbolsCache.set(market, symbols, Date.now())
         }
-        return { symbols }
+        return { symbols: symbols.filter(matches) }
       } catch {
         return { symbols: [] }
       }
@@ -1591,6 +1622,34 @@ export class TradingBridge {
   }
 
   /** 央行最新利率（金十网页版，全量 30 家；地区过滤在客户端）。 */
+  /** 通达信里的自定义条件选股公式（通达信没开 → available:false + 原因）。 */
+  async tdxFormulas(): Promise<TdxFormulasWire> {
+    return this.requireTdx().listFormulas()
+  }
+
+  /** 用通达信引擎跑一个选股公式（body: { formula, boards?, date? }）。 */
+  async tdxSelect(body: unknown): Promise<TdxSelectWire> {
+    const raw = (body ?? {}) as { formula?: unknown; boards?: unknown; date?: unknown }
+    const formula = typeof raw.formula === 'string' ? raw.formula.trim() : ''
+    if (!formula) throw new BridgeProtocolError(400, 'tdx select body requires string formula')
+    const boards = Array.isArray(raw.boards) ? raw.boards.filter((b): b is string => typeof b === 'string') : []
+    const date = typeof raw.date === 'string' ? raw.date : undefined
+    try {
+      return await this.requireTdx().select({ formula, boards, ...(date !== undefined ? { date } : {}) })
+    } catch (error) {
+      if (error instanceof Error && /^invalid (formula name|date)/.test(error.message)) throw new BridgeProtocolError(400, error.message)
+      throw error
+    }
+  }
+
+  private requireTdx(): TdxFormulaRunnerLike {
+    const runner = this.host.tdxFormula
+    if (runner === undefined) {
+      throw Object.assign(new Error('tdx formula runner is not mounted (zettaranc skill not found)'), { code: 'TRADING_NOT_IMPLEMENTED' })
+    }
+    return runner
+  }
+
   async macroRates(): Promise<MacroRatesWire> {
     const feed = this.host.macroFeed
     if (feed === undefined) {
@@ -2262,14 +2321,16 @@ export class TradingBridge {
 
     if (hasVisible) {
       // 可见性写：实例缺席为幂等 no-op（隐藏未挂载指标无意义，不反向创建）。
-      if (market === '') {
-        return { ok: false, code: 'TRADING_INVALID_SCOPE', message: 'visibility write requires market (optionally symbol)' }
+      if (market === '' && symbol !== '') {
+        return { ok: false, code: 'TRADING_INVALID_SCOPE', message: 'visibility write with symbol requires market' }
       }
       if (existing === undefined) {
         return { ok: true, instances: store !== undefined ? await store.list() : [] }
       }
-      const hideScope = symbol !== '' ? symbolScopeKey(market, symbol) : market
-      const next = withHiddenScopes(existing, hideScope, raw.visible === true)
+      // 不带 market 是全局开关（GUI）；带 market 是整市场或单标的（工具）。
+      const next = market === ''
+        ? withGlobalVisibility(existing, raw.visible === true)
+        : withHiddenScopes(existing, symbol !== '' ? symbolScopeKey(market, symbol) : market, raw.visible === true)
       // existing 来自 store.list()，存在即 store 已定义；此处守卫只为类型窄化。
       if (store !== undefined && next !== existing) await store.activate(next)
       return { ok: true, instances: store !== undefined ? await store.list() : [next] }
@@ -2720,6 +2781,13 @@ export const BRIDGE_WRITE_ROUTES: readonly BridgeWriteRoute[] = [
     handle: async ({ bridge, body }) => ({ status: 200, payload: await bridge.saveCustomScreener(body) }),
   },
   {
+    // 只读计算（通达信引擎选股），用 POST 只为带 body；不失效任何 store。
+    method: 'POST',
+    pathname: '/tdx/select',
+    invalidates: [],
+    handle: async ({ bridge, body }) => ({ status: 200, payload: await bridge.tdxSelect(body) }),
+  },
+  {
     method: 'POST',
     pathname: '/trade/order',
     invalidates: [],
@@ -2841,6 +2909,10 @@ export async function dispatchBridgeRequest(
   const readResult = (payload: unknown): BridgeRouteResult => ({ status: 200, payload })
   if (method === 'GET') {
     switch (pathname) {
+      case '/amv-regime':
+        return readResult(await readLocalAmv())
+      case '/float-history':
+        return readResult(await readLocalFloatHistory(search.get('symbol') ?? ''))
       case '/markets':
         return readResult(bridge.markets())
       case '/tickers': {
@@ -2933,6 +3005,9 @@ export async function dispatchBridgeRequest(
       }
       case '/macro/rates': {
         return readResult(await bridge.macroRates())
+      }
+      case '/tdx/formulas': {
+        return readResult(await bridge.tdxFormulas())
       }
       case '/prediction/fomc': {
         return readResult(await bridge.predictionFomc())

@@ -55,13 +55,13 @@ describe('ticker-bar：日 K 的 ticker 合并与当日未完成 bar 补位', ()
   })
 
   it('用户看日 K 时末根还是昨日 → 追加一根当日未完成 bar，快照价同时是开高低收', () => {
-    // Given cn 日 K 只到 10-20，快照是 10-21 10:00 CST（次日盘中）带量 3456
+    // Given cn 日 K 只到 10-20，快照是 10-21 10:00 CST（次日盘中）带量 345600 股
     const prev = [dailyBar(cnDay(20), 10.0, 10.2, 9.9, 10.1, 1200)]
 
     // When 用 12.5 的快照推进
-    const result = withTickerBar(prev, snapshot(Date.UTC(2026, 9, 21, 2), 12.5, 3456), CN_DAILY)
+    const result = withTickerBar(prev, snapshot(Date.UTC(2026, 9, 21, 2), 12.5, 345600), CN_DAILY)
 
-    // Then 末位多出一根 10-21 的未完成 bar，入参数组原样不被改写
+    // Then 末位多出一根 10-21 的未完成 bar（成交量换成 3456 手，与日 K 同单位），入参数组原样不被改写
     expect(result).toHaveLength(2)
     expect(result[1]).toEqual({
       openTime: cnDay(21), open: 12.5, high: 12.5, low: 12.5, close: 12.5, volume: 3456, closeTime: cnDay(21) + DAY_MS - 1,
@@ -77,10 +77,11 @@ describe('ticker-bar：日 K 的 ticker 合并与当日未完成 bar 补位', ()
     // When 用 200 的快照推进
     const result = withTickerBar(prev, snapshot(Date.UTC(2026, 9, 21, 14), 200, 6000), { market: 'us', interval: '1d' })
 
-    // Then 新 bar 的 openTime 是 10-21 的行情日界（UTC 日期 21，与本地日同一天）
+    // Then 新 bar 的 openTime 是 10-21 的行情日界（UTC 日期 21，与本地日同一天）；美股两边都是股，量不换算
     expect(result).toHaveLength(2)
     expect(result[1]?.openTime).toBe(Date.UTC(2026, 9, 21))
     expect(new Date(result[1]?.openTime ?? 0).getUTCDate()).toBe(21)
+    expect(result[1]?.volume).toBe(6000)
   })
 
   it('用户看美股日 K 时盘前快照 → 不补当日 bar，延长时段的价不进常规日 K', () => {
@@ -152,7 +153,7 @@ describe('ticker-bar：日 K 的 ticker 合并与当日未完成 bar 补位', ()
     const prev = [dailyBar(cnDay(20), 10.0, 10.2, 9.9, 10.1, 1200)]
 
     // When 用 5.5 的快照推进
-    const result = withTickerBar(prev, snapshot(Date.UTC(2026, 9, 21, 4), 5.5, 800), CN_DAILY)
+    const result = withTickerBar(prev, snapshot(Date.UTC(2026, 9, 21, 4), 5.5, 80000), CN_DAILY)
 
     // Then 补出当日 bar（开高低收 5.5）
     expect(result).toHaveLength(2)
@@ -310,7 +311,7 @@ describe('ticker-bar：全量重取落地时的当日 bar 复原', () => {
     // Given resync 落地的是只到 10-20 的日 K，上一拍序列也只有昨日真 bar，快照来自同一个源 tencent
     const rows = [dailyBar(cnDay(20), 10.0, 10.2, 9.9, 10.1, 1200)]
     const prev = [dailyBar(cnDay(20), 10.0, 10.2, 9.9, 10.1, 1200)]
-    const last: TickerSnapshot = { ticker: snapshot(Date.UTC(2026, 9, 21, 2), 12.5, 3456), source: 'tencent' }
+    const last: TickerSnapshot = { ticker: snapshot(Date.UTC(2026, 9, 21, 2), 12.5, 345600), source: 'tencent' }
 
     // When 落地前复原
     const result = restoreFormingBar(rows, prev, last, 'tencent', CN_DAILY)
@@ -347,7 +348,7 @@ describe('ticker-bar：全量重取落地时的当日 bar 复原', () => {
       dailyBar(cnDay(20), 10.0, 10.2, 9.9, 10.1, 1200),
       dailyBar(cnDay(21), 12.8, 13.4, 12.2, 13.0, 2400),
     ]
-    const last: TickerSnapshot = { ticker: snapshot(Date.UTC(2026, 9, 21, 2, 30), 12.5, 3456), source: 'tencent' }
+    const last: TickerSnapshot = { ticker: snapshot(Date.UTC(2026, 9, 21, 2, 30), 12.5, 345600), source: 'tencent' }
 
     // When 落地前复原
     const result = restoreFormingBar(rows, prev, last, 'tencent', CN_DAILY)
@@ -414,7 +415,7 @@ describe('ticker-bar：全量重取落地时的当日 bar 复原', () => {
     // Given 上一拍序列的末根是 10-20 的真日 K（极值 99/1），上游重取仍缺当日那根
     const rows = [dailyBar(cnDay(20), 10.0, 99.0, 1.0, 10.1, 1200)]
     const prev = [dailyBar(cnDay(20), 10.0, 99.0, 1.0, 10.1, 1200)]
-    const last: TickerSnapshot = { ticker: snapshot(Date.UTC(2026, 9, 21, 2), 12.5, 3456), source: 'tencent' }
+    const last: TickerSnapshot = { ticker: snapshot(Date.UTC(2026, 9, 21, 2), 12.5, 345600), source: 'tencent' }
 
     // When 落地前复原
     const result = restoreFormingBar(rows, prev, last, 'tencent', CN_DAILY)

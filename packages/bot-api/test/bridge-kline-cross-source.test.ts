@@ -12,7 +12,7 @@
  * - 限流/坏符号/交易所业务错误原样抛、绝不换源；候选耗尽 → 原样抛最后一个错误；
  * - 整段同源（不拼接多源序列），provider 如实标注最终供数的那一个源。
  */
-import { describe, expect, it } from 'vitest'
+import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import type { Interval, Kline, KlineCapability, MarketDataService } from '@dshtrading/api'
 import { fakeMarketService } from '@dshtrading/test-support'
 import {
@@ -25,6 +25,14 @@ import {
 } from '../src/bridge.ts'
 
 const DAY = Date.UTC(2026, 9, 14)
+
+// 这里测的是接口选源，不能读到开发机上真实的通达信目录（本地 K 线另见 local-klines.test.ts）。
+const previousTdxDir = process.env.DSH_TRADING_TDX_DIR
+beforeAll(() => { process.env.DSH_TRADING_TDX_DIR = '__no_local_tdx__' })
+afterAll(() => {
+  if (previousTdxDir === undefined) delete process.env.DSH_TRADING_TDX_DIR
+  else process.env.DSH_TRADING_TDX_DIR = previousTdxDir
+})
 
 interface KlineCall {
   symbol: string

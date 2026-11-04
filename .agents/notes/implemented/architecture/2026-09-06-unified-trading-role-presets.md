@@ -40,6 +40,18 @@ master 委派边界如实声明：fork 子代理继承会话工具面（含下�
 
 已知缺陷（2026-09-06 晚实证，宿主 SDK rc.1 层，非本仓可修）：**创建后切换预设（GUI 会话头 picker → `agentPresets/select`）只切工具面、不切系统提示词 persona**。证据：6 个含 `agent-preset/selected` 事件的会话（含 master、instrument-researcher 目标）request/header 全部保留创建时 persona，无一跟随；同会话工具面切换成功（研究员会话可调 cn_get_* 工具）——形成「工具是研究员、纪律是默认」的半切换状态。对照组：创建时绑定（定时任务 agentPreset=master）与 fork 委派子代理的 per-child persona 均正确注入。根因收窄至 SDK 的 blank-session select 路径（swap→recompose→rebind 对 tools 注册表生效、对 systemPrompt ScopedLayers 不生效；静态阅读 dsh-scope/dsh-system-prompt 显示应为动态解析，疑似 rc.1 实现缺陷）。**Workaround：在 Settings 把默认预设写成目标角色后新建会话**（创建时绑定 100% 生效），不要依赖会话内切换；已半切换的会话废弃重建。
 
+## zettaranc 框架视角（2026-11-02）
+
+`zettaranc`（名册名「Zettaranc（Z哥视角）」）是第五个角色，排在大师之前。只覆盖 A 股：只挂 cn 的 kit 和只读行情、`company-analysis`，不挂连接器，因此没有下单工具；另挂 bash 供技能的 `zt` 命令使用。不挂两阶段 bootstrap，也不进大师的委派名单。不挂 `trading_batch`：2026-11-02 实测它在这个角色里调不到 cn 工具，只返回空结果或报错；写进 `denyTools` 没有生效（原因未查明），所以直接不挂这一行。
+
+工具面按 token 收窄。首次实测 11 步共输入 72 万 token，工具定义占第一步的约八成，因为每步都要重发。`tool-surface` 为它裁掉其他市场、选股器、策略、指标、自选和任务族，以及持仓和知识库的写入工具。同次实测发现 `tool-surface` 只在挂载时读一次注册面，晚注册的 `tasks_*` 漏裁，现在它监听 `tools/change` 补裁。
+
+技能不随包分发。`zettaranc-perspective` 含第三方整理内容和 Python 环境，放进 base 就会随 npm 发布，违反“不再分发数据”。部署方把技能目录放到 `$DSH_HOME/skills`，由各角色已挂载的 `dsh-skill-filesystem` 发现；没有放时 persona 要求如实说明技能缺失。本机是指向 `~/.claude/skills/zettaranc-perspective` 的目录联接。
+
+persona 明确压过技能里“以本人身份回应”的写法：可以用这套框架和说话风格，但必须声明是基于公开资料的模拟，不冒充真人，不编造他的观点、持仓和原话。
+
+base 的部署默认仍是 `master`，干净部署不受影响。要默认进 zettaranc，由部署方在 profile 的 `cordis.patch.yml` 覆盖 `agent-preset-registry` 行的 `default`。注册表优先使用用户在界面选的 `selectedDefault`，它存在时覆盖部署默认。只有新建会话才绑定新角色：已有会话保留原组合，会话内切换有上文记录的 persona 缺陷。
+
 ## 0.1.7 cohort 迁移（2026-09-23）：磁盘 roots → agent-preset-registry 运行时注册
 
 0.1.7 官方停发 `@deepseek-ai/dsh-agent-presets` 并删除磁盘 roots 机制（preset 定义

@@ -53,8 +53,8 @@ export interface MiddleStageInjected {
   }
   toggleIndicator: (id: string) => void
   setIndicatorParams: (id: string, params: Record<string, number>, scopeKey?: string) => void
-  /** 按标的可见性（symbol visibility；scopeKey = `${market}:${symbol}`，缺省忽略）。 */
-  setIndicatorVisible: (id: string, visible: boolean, scopeKey?: string) => void
+  /** 指标显示开关，对所有股票生效。 */
+  setIndicatorVisible: (id: string, visible: boolean) => void
   /** 适用范围（scope === undefined 删除该市场条目，落回全部级别应用）。 */
   setIndicatorScope: (id: string, market: MarketId, scope: IndicatorMarketScope | undefined) => void
   /** 全局移除：卸载所有标的上的该指标实例。 */

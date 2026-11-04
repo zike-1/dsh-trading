@@ -34,6 +34,9 @@ import { chartXToContainerX, containerXToChartX, visibleDayMarkXs } from './char
 import { fiveDayWheelStep, viewportResetStrategy } from './five-day-series.ts'
 import type { IndicatorOutput } from '@dshtrading/indicators'
 import type { Kline } from './types.ts'
+import type { AmvHistory } from '@dshtrading/indicators'
+import { AmvBackground, amvBandsForBars } from './amv-background.ts'
+import { StickLinePrimitive } from './stick-line-primitive.ts'
 
 export { isDarkTheme }
 
@@ -98,6 +101,9 @@ export interface MarkerHoverInfo {
 }
 
 export interface TvChartProps {
+  amvHistory?: AmvHistory | undefined
+  /** 活跃市值背景上的多/空字（按界面语言传入）。 */
+  amvLabels?: { bull: string; bear: string } | undefined
   bars: readonly TvBar[]
   /** market:symbol:interval——变化即全量重置并 fitContent。 */
   dataKey: string
@@ -549,6 +555,15 @@ function TvChartImpl(props: TvChartProps): React.JSX.Element {
   }, [bars, dataKey, props.colorMode, props.fiveDay])
 
   // ---- 五日级别日界竖线：日界时刻 → 容器 x 坐标（滚动/缩放/换数据都要重算） ----
+  useEffect(() => {
+    const chart = chartRef.current
+    const candles = candleRef.current
+    if (chart === null || candles === null || props.amvHistory === undefined) return
+    const primitive = new AmvBackground(chart, amvBandsForBars(bars.map(bar => Number(bar.time)), props.amvHistory), dark, props.amvLabels)
+    candles.attachPrimitive(primitive)
+    return () => { if (chartRef.current === chart) candles.detachPrimitive(primitive) }
+  }, [props.amvHistory, props.amvLabels?.bull, props.amvLabels?.bear, bars, dataKey, dark])
+
   const [dayMarks, setDayMarks] = useState<number[]>([])
   const dayMarkRafRef = useRef(0)
   useEffect(() => {
@@ -667,6 +682,8 @@ function TvChartImpl(props: TvChartProps): React.JSX.Element {
       let low = bar.low
       for (const group of mainOverlays) {
         for (const output of group.outputs) {
+          // 评分这类只显示读数的序列不是价格，算进包络会把价格轴撑到 0。
+          if (output.noAutoscale === true) continue
           const value = output.values[index]
           if (value === undefined || !Number.isFinite(value)) continue
           if (value > high) high = value
@@ -714,6 +731,36 @@ function TvChartImpl(props: TvChartProps): React.JSX.Element {
     syncIndicators(chart, mainRefs.current, mainOverlays, timeAxis, false, 0, dark)
     syncIndicators(chart, subRefs.current, subIndicators, timeAxis, true, subIndicatorPaneIndex(0), dark)
     applyStretch(chart)
+
+    // ---- 矩形段（STICKLINE）和文字标注（DRAWTEXT）挂载 ----
+    // HistogramSeries 的柱恒从零基线起画，画不了两端都非零的矩形，所以用 primitive
+    // 自己算坐标。副图序列每次同步都是重建式（recreateAll），序列对象会换新，挂载必须
+    // 跟在同一处、并在组消失时随序列撤下。
+    const mounted: Array<{ series: ISeriesApi<SeriesType>; primitive: StickLinePrimitive }> = []
+    const mountShapes = (groups: readonly TvIndicatorGroup[], refs: Map<string, Map<string, ISeriesApi<SeriesType>>>): void => {
+      for (const group of groups) {
+        for (const output of group.outputs) {
+          const series = refs.get(group.key)?.get(output.key)
+          if ((output.sticks === undefined && output.labels === undefined) || series === undefined) continue
+          const primitive = new StickLinePrimitive(output.sticks ?? [], dark, output.labels ?? [])
+          series.attachPrimitive(primitive)
+          mounted.push({ series, primitive })
+        }
+      }
+    }
+    mountShapes(mainOverlays, mainRefs.current)
+    mountShapes(subIndicators, subRefs.current)
+    return () => {
+      // 清理顺序：本 effect 的 cleanup 先于下一次重建运行，此时旧序列仍由库持有，
+      // 显式解绑可以避免 primitive 残留在一个已被 removeSeries 的序列上。
+      for (const entry of mounted) {
+        try {
+          entry.series.detachPrimitive(entry.primitive)
+        } catch {
+          // 序列已被库回收（换标的/关指标时 removeSeries 先于 cleanup）→ 无需解绑。
+        }
+      }
+    }
   }, [mainOverlays, subIndicators, bars, props.colorMode, dark])
 
   // ---- pane 几何测量：legend overlay 定位用 ----
@@ -970,7 +1017,7 @@ function TvChartImpl(props: TvChartProps): React.JSX.Element {
             <IndicatorPaneTitle title={group.title} live={group.live} liveText={props.liveText} />
             {group.outputs.map((output) => {
               const value = output.values[readoutIndex]
-              if (value === undefined || !Number.isFinite(value)) return null
+              if (output.noLegend === true || value === undefined || !Number.isFinite(value)) return null
               return (
                 <span key={output.key} style={{ color: resolveOutputColor(output, dark), fontWeight: 500 }}>
                   {output.key}: {value.toFixed(output.precision ?? 2)}
@@ -1196,6 +1243,10 @@ function createSeries(chart: IChartApi, output: IndicatorOutput, paneIndex: numb
     lastValueVisible: false,
     crosshairMarkerVisible: false,
     priceFormat,
+    ...(output.lineStyle === 'dotted' ? { lineStyle: LineStyle.Dotted } : {}),
+    ...(output.lineStyle === 'circles' ? { lineVisible: false, pointMarkersVisible: true, pointMarkersRadius: 1.5 } : {}),
+    ...(output.noDraw === true ? { lineVisible: false } : {}),
+    ...(output.noAutoscale === true ? { autoscaleInfoProvider: () => null } : {}),
   }, paneIndex)
 }
 

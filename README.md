@@ -1,5 +1,7 @@
 # dsh-trading — Open-Source AI Trading Terminal & Multi-Agent Quantitative Platform
 
+> **About this fork / 关于本 fork**: This is a non-commercial fork of [zhu1090093659/dsh-trading](https://github.com/zhu1090093659/dsh-trading) under the same PolyForm Noncommercial 1.0.0 license. It adds optional China A-share local-data features (TDX daily bars, 0AMV regime background, a TDX formula-engine screener tab, daily-pick watchlist sync, and a Zettaranc-perspective analysis role). All of them are off until configured; see [docs/guides/a-share-local-data.md](docs/guides/a-share-local-data.md). Nothing here is investment advice.
+
 > **Current Status & Handoff** / **当前状态与交接**：See [docs/current-state.md](docs/current-state.md) (accepted milestones, fail-closed invariants, documentation map).
 
 **English** | [简体中文](README_zh.md)

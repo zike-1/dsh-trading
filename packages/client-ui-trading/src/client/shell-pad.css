@@ -249,3 +249,11 @@ body[data-dshtrading-macro-open='on'] div:has(> [data-shell-overlay]) > div:nth-
 body[data-dshtrading-prediction-open='on'] div:has(> [data-shell-overlay]) > div:nth-child(2) > * {
   display: none !important;
 }
+
+/* 17) 2026-11-04 通达信选股面板 = 会话列容器的切换页签 7 号（列出通达信自定义选股公式，
+      按名调用通达信自己的公式引擎；与其余页签同款模式、七者互斥）：漏斗按钮激活时隐去
+      对话列直接子节点，TdxScreenerPanel（fixed，定位吃同一组轨道变量）原位覆盖。
+      body[data-dshtrading-screener-open] 由 SessionRail effect 写入。 */
+body[data-dshtrading-screener-open='on'] div:has(> [data-shell-overlay]) > div:nth-child(2) > * {
+  display: none !important;
+}

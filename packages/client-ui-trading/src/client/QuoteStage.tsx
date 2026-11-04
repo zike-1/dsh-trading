@@ -4,12 +4,16 @@
  * 主图指标读数行（副图指标读数在 TvChart 各自 pane 内）+
  * 底部横向指标快捷词条带 + 底部市场指数状态栏。
  */
+import type { AmvHistory } from '@dshtrading/indicators'
+import { fetchAmvRegime } from './api.ts'
+import { isAmvChartEnabled } from './amv-background.ts'
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react'
 import {
   fetchKlines, fetchKlinesFrom, fetchTickers, fetchDerivatives, fetchDerivativesHistory, fetchOrderbook, fetchRecentTrades,
   fetchTradePositions, fetchTradeBalances, fetchTradeOpenOrders, fetchTradeFills, placeGuiOrder,
-  cancelGuiOrder, fetchSouthboundHoldings, fetchActiveBuy, type TradeRowsReason,
+  cancelGuiOrder, fetchSouthboundHoldings, fetchActiveBuy, fetchFundamentals, fetchFloatHistory, type TradeRowsReason,
 } from './api.ts'
+import type { FloatShareEvent } from './float-history.ts'
 import { setHoldingsPanelOpen } from './holdings-store.ts'
 import { tradeModeStore, writeTradeMode } from './trade-mode-store.ts'
 import {
@@ -74,6 +78,9 @@ import { createMarkerStateStore } from './marker-state.ts'
 import { isAnnouncementSource } from './news-source.ts'
 import type { ChartSignalMarkerInput, ChartKnowledgeMarkerInput } from './TvChart.tsx'
 import css from './quote-stage.module.css'
+
+/** 用户自己导入的 ZXB1 金砖自定义指标约定的 id（公式不随仓库发布，导入方法见 docs/guides/a-share-local-data.md）。 */
+const ZXB1_INDICATOR_ID = 'zx_b1_bricks_core'
 
 const INTERVAL_KEY_PREFIX = 'dshtrading.interval.'
 /** KDAS 指标 id（custom 库自定义指标；Key Day 即 kd1..kd8 参数）。 */
@@ -147,7 +154,7 @@ export interface QuoteStageProps extends GuiApprovalContextProps {
    * scopeKey = `${market}:${symbol}`；缺省（无聚焦标的）由 shell 忽略——调用方
    * 在该情形应退回 toggleIndicator 全局语义。
    */
-  setIndicatorVisible: (id: string, visible: boolean, scopeKey?: string) => void
+  setIndicatorVisible: (id: string, visible: boolean) => void
   /**
    * 适用范围（按市场独立配置适用的 K 线级别）：scope === undefined 删除该市场
    * 条目（落回「全部市场、全部级别应用」）。不适用 ≠ 取消激活。
@@ -199,18 +206,13 @@ export function QuoteStage({ t, useSelection, useChart, toggleIndicator, setIndi
     () => instances.filter(instance => isInstanceVisibleOn(instance, market, symbol)),
     [instances, market, symbol],
   )
-  // 复选框/快捷词条共用的按标的开关（symbol visibility）：关→记隐藏；开→清隐藏；
-  // 未挂载→全局挂载；无聚焦标的（market/symbol 缺失）退回全局开关语义。
+  // 复选框/快捷词条共用的开关，对所有股票生效（2026-11-03 用户要求设置能跟随换股）：
+  // 关→全局隐藏；开→清隐藏；未挂载→挂载。隐藏不卸载，参数和按股票的覆盖都保留。
   const toggleIndicatorVisible = (id: string): void => {
     const raw = instances.find(candidate => candidate.id === id)
     const isVisible = raw !== undefined && isInstanceVisibleOn(raw, market, symbol)
-    if (market === undefined || symbol === undefined) {
-      toggleIndicator(id)
-      return
-    }
-    const scopeKey = symbolScopeKey(market, symbol)
-    if (isVisible) setIndicatorVisible(id, false, scopeKey)
-    else if (raw !== undefined) setIndicatorVisible(id, true, scopeKey)
+    if (isVisible) setIndicatorVisible(id, false)
+    else if (raw !== undefined) setIndicatorVisible(id, true)
     else {
       toggleIndicator(id)
       // 决策 7：挂载那一刻补写默认适用范围（只在此刻写——用户在适用范围面板把级别
@@ -467,6 +469,25 @@ export function QuoteStage({ t, useSelection, useChart, toggleIndicator, setIndi
   const auxKeys = requiredAuxKeys(applicableInstances, market, id => indicators.get(id))
   const auxState = useAuxSeries(market, symbol, auxKeys, fetchSouthboundHoldings, fetchActiveBuy)
   const auxSeries = auxState.series
+  const amvEnabled = isAmvChartEnabled(market, chartInterval, applicableInstances)
+  const [amvHistory, setAmvHistory] = useState<AmvHistory | undefined>()
+  // 多/空字按语言取；memo 住，避免每次渲染换新对象让图表跟着重绘。
+  const amvLabels = useMemo(() => ({ bull: t('amv.bull'), bear: t('amv.bear') }), [t])
+  useEffect(() => {
+    let cancelled = false
+    setAmvHistory(undefined)
+    if (!amvEnabled) return
+    const load = (): void => {
+      void fetchAmvRegime().then(data => {
+        if (!cancelled) setAmvHistory(data)
+      }).catch(() => {
+        if (!cancelled) setAmvHistory({ available: false, points: [], intervals: [], missingDates: [], notice: t('amv.loadFailed') })
+      })
+    }
+    load()
+    const timer = setInterval(load, 60_000)
+    return () => { cancelled = true; clearInterval(timer) }
+  }, [amvEnabled, market, symbol, chartInterval])
 
   // 衍生品指标轮询（issue #38，仅 crypto；现货输入由连接器升到对应永续）。
   // 竞态守卫（issue #54 评审 M3）：换标的后在途响应丢弃，不覆盖新标的 state。
@@ -842,6 +863,25 @@ export function QuoteStage({ t, useSelection, useChart, toggleIndicator, setIndi
     if (result.ok) applyKdasParams(result.params)
   }, [kdasScopeParams, applyKdasParams])
 
+  // ZXB1 的买入砖要逐根换手率（DYNAINFO(37)），K 线里没有，用成交量 ÷ 流通股本还原。优先用
+  // 本机通达信的历史股本；没有时回落最新流通股本。只在它上图且是 A 股时各取一次。
+  const needsFloatShares = market === 'cn' && applicableInstances.some(instance => instance.id === ZXB1_INDICATOR_ID)
+  const [floatShares, setFloatShares] = useState<number | undefined>(undefined)
+  const [floatHistory, setFloatHistory] = useState<readonly FloatShareEvent[] | undefined>(undefined)
+  useEffect(() => {
+    setFloatShares(undefined)
+    setFloatHistory(undefined)
+    if (!needsFloatShares || market === undefined || symbol === undefined) return
+    const controller = new AbortController()
+    void fetchFundamentals(market, symbol, controller.signal).then((fundamentals) => {
+      if (!controller.signal.aborted) setFloatShares(fundamentals?.stock?.floatShares)
+    })
+    void fetchFloatHistory(symbol, controller.signal).then((events) => {
+      if (!controller.signal.aborted) setFloatHistory(events)
+    })
+    return () => { controller.abort() }
+  }, [needsFloatShares, market, symbol])
+
   // 指标调度：适用实例 × 图表序列 × 外部序列 → 渲染输入（symbol visibility + 适用范围
   // 双重过滤后的实例才参与计算与绘制；主图与副图同规则）。声明了 aux 的实例另需外部
   // 序列就绪，否则整体不进调度（决策 3：副图 pane 不存在）——见 indicator-dispatch。
@@ -855,13 +895,15 @@ export function QuoteStage({ t, useSelection, useChart, toggleIndicator, setIndi
       aux: auxSeries,
       ...(fiveDayBarAux !== undefined ? { barAux: fiveDayBarAux } : {}),
       liveKeys: auxState.liveKeys,
+      floatShares,
+      floatHistory,
       deps: {
         getDefinition: id => indicators.get(id),
         clampParams: (definition, params) => indicators.clampParams(definition, params),
         instanceKey: instance => indicators.instanceKey(instance),
       },
     })
-  }, [seriesKlines, applicableInstances, rosterVersion, market, symbol, auxSeries, auxState.liveKeys, fiveDayBarAux])
+  }, [seriesKlines, applicableInstances, rosterVersion, market, symbol, auxSeries, auxState.liveKeys, fiveDayBarAux, floatShares, floatHistory])
 
   const mainOverlays = useMemo(() => indicatorGroups.filter(group => group.pane === 'main'), [indicatorGroups])
   // 副图组的空态文案在这里落地（词典只属于 UI 层，dispatch 只给数据域键位）：
@@ -880,6 +922,10 @@ export function QuoteStage({ t, useSelection, useChart, toggleIndicator, setIndi
 
   const readoutIndex = hoverIndex ?? (seriesKlines !== null && seriesKlines.length > 0 ? seriesKlines.length - 1 : null)
   const readoutCandle = seriesKlines !== null && readoutIndex !== null ? seriesKlines[readoutIndex] : undefined
+  const amvReadoutDay = readoutCandle === undefined ? undefined : new Date(readoutCandle.openTime).toISOString().slice(0, 10)
+  const amvReadout = amvEnabled && amvReadoutDay !== undefined && amvHistory?.points.some(point => point.date === amvReadoutDay && point.state !== null)
+    ? amvHistory.intervals.find(interval => interval.start <= amvReadoutDay && interval.end >= amvReadoutDay)
+    : undefined
   // 读数行昨收跟随十字光标：悬停历史K线取当前周期序列的前一根收盘价（日K下即该日
   // 昨收）；未悬停或悬停最新一根沿用官方锚点 ticker.prevClose（日K补齐滞后时序列
   // 倒数第二根会错位一个交易日，见上方 stats 注释）；序列首根无前一根则留空。
@@ -1279,6 +1325,15 @@ export function QuoteStage({ t, useSelection, useChart, toggleIndicator, setIndi
       )}
 
       {viewTab === 'chart' && kError !== null && <div className={css.error}>{t('quote.loadFailedColon', { error: kError })}</div>}
+      {viewTab === 'chart' && amvEnabled && (
+        <div role="status" style={{ fontSize: 11, padding: '4px 12px', color: 'var(--dsw-futu-text-secondary, #5f6672)' }}>
+          {t('amv.title')} · {amvHistory === undefined ? t('amv.loading') : `${amvHistory.available ? t('amv.coverage', { first: amvHistory.firstDate, last: amvHistory.lastDate }) : ''}${amvHistory.notice}`}
+          {amvReadout !== undefined && <span> {t('amv.current', { state: amvReadout.state === 'bull' ? t('amv.bull') : t('amv.bear'), start: amvReadout.start, end: amvReadout.end })}</span>}
+        </div>
+      )}
+      {viewTab === 'chart' && market === 'cn' && chartInterval !== '1d' && visibleInstances.some(instance => instance.id === 'amv-regime') && (
+        <div role="status" style={{ fontSize: 11, padding: '4px 12px' }}>{t('amv.dailyOnly')}</div>
+      )}
 
       {/* 图表主舞台 / 基本面页签（互斥挂载）；crypto 图表下方挂衍生品指标条（issue #38），
           右侧可折叠盘口竖栏（issue #39） */}
@@ -1288,6 +1343,8 @@ export function QuoteStage({ t, useSelection, useChart, toggleIndicator, setIndi
             <div className={css.chartBox} ref={chartBoxRef}>
             {klines !== null && bars.length > 0 && (
               <TvChart
+                amvHistory={amvEnabled ? amvHistory : undefined}
+                amvLabels={amvLabels}
                 bars={bars}
                 dataKey={`${market}:${symbol}:${chartInterval}`}
                 intraday={INTRADAY_INTERVALS.has(chartInterval)}

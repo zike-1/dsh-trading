@@ -49,6 +49,47 @@ export interface IndicatorThemeColor {
   dark: string
 }
 
+/**
+ * 两个任意纵坐标之间的一段矩形（对应通达信 STICKLINE）。数组顺序即绘制顺序，后画的
+ * 盖住先画的；纵坐标与同 pane 的输出共用一条价格轴。
+ */
+export interface IndicatorStick {
+  /** 与 K 线对齐的下标。 */
+  index: number
+  from: number
+  to: number
+  /** STICKLINE 的宽度参数：>= 1 占满 K 线间距，< 1 是细棒。 */
+  width: number
+  color: string
+  /** 浅色主题下的替代色（白、亮黄在白底上看不见）；缺省用 color。 */
+  lightColor?: string
+  /** 空心（只描边）。 */
+  hollow?: boolean
+}
+
+/** K 线旁的一个文字标注（对应通达信 DRAWTEXT/DRAWICON）。 */
+export interface IndicatorLabel {
+  /** 与 K 线对齐的下标。 */
+  index: number
+  price: number
+  text: string
+  color: string
+  /** 浅色主题下的替代色；缺省用 color。 */
+  lightColor?: string
+  /** 同一根同一价位有多个标注时向上排（缺省向下）。 */
+  stackUp?: boolean
+}
+
+/** 宿主传给 compute 的标的信息。两项都可能缺失（试算、Agent 工具路径），指标须能退化。 */
+export interface IndicatorComputeContext {
+  market?: string | undefined
+  symbol?: string | undefined
+  /** 最新流通股本（股）。 */
+  floatShares?: number | undefined
+  /** 每根 K 线当时的流通股本（股），与 bars 对齐；某根缺失时用 {@link floatShares}。 */
+  barFloatShares?: ReadonlyArray<number | undefined> | undefined
+}
+
 export interface IndicatorOutput {
   /** 实例内唯一（图例/序列 key）。 */
   key: string
@@ -76,9 +117,23 @@ export interface IndicatorOutput {
   lineWidth?: number
   /** 图例/读数小数位（缺省 2）：成本线类自定义指标可设 3 提高读数分辨率。 */
   precision?: number
+  /** line 专用：点线（通达信 DOTLINE）或逐根圆点（通达信 CIRCLEDOT）。 */
+  lineStyle?: 'dotted' | 'circles'
+  /** line 专用：不画线，只在图例显示读数（通达信 NODRAW）。 */
+  noDraw?: boolean
+  /** 不进图例和读数行（通达信 NOTEXT，或只作绘制载体的序列）。 */
+  noLegend?: boolean
+  /** 不参与纵轴自动缩放（只显示读数的序列不该把轴撑开）。 */
+  noAutoscale?: boolean
+  /** 挂在本序列上绘制的矩形段（见 {@link IndicatorStick}）。 */
+  sticks?: readonly IndicatorStick[]
+  /** 挂在本序列上绘制的文字标注（见 {@link IndicatorLabel}）。 */
+  labels?: readonly IndicatorLabel[]
 }
 
 export interface IndicatorDefinition {
+  /** 背景型指标由宿主原生 pane 绘制，不输出价格序列。缺省保持既有序列路径。 */
+  renderMode?: 'background'
   /** 注册唯一 id（如 'ma'）；实例按 id + 参数区分。 */
   id: string
   pane: IndicatorPane
@@ -90,7 +145,7 @@ export interface IndicatorDefinition {
    */
   description?: string
   params: readonly IndicatorParamSpec[]
-  compute(bars: readonly Kline[], params: Readonly<Record<string, number>>): IndicatorOutput[]
+  compute(bars: readonly Kline[], params: Readonly<Record<string, number>>, context?: IndicatorComputeContext): IndicatorOutput[]
   /** 需要宿主预取的外部序列键（可选）；缺失 = 本指标只吃 K 线。 */
   aux?: readonly AuxSeriesKey[]
   /**

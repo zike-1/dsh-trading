@@ -11,8 +11,8 @@
  * 请经由子路径 `@dshtrading/indicators/tool` 引用。
  */
 export type {
-  IndicatorApplyScope, IndicatorDefinition, IndicatorInstance, IndicatorMarketScope,
-  IndicatorOutput, IndicatorPane, IndicatorParamSpec, IndicatorThemeColor, Kline,
+  IndicatorApplyScope, IndicatorComputeContext, IndicatorDefinition, IndicatorInstance, IndicatorLabel, IndicatorMarketScope,
+  IndicatorOutput, IndicatorPane, IndicatorParamSpec, IndicatorStick, IndicatorThemeColor, Kline,
 } from './types.ts'
 export { alignAuxToBars, type AuxPoint, type AuxSeriesKey, type AuxSeriesMap } from './aux-series.ts'
 export {
@@ -48,6 +48,7 @@ export {
   clampActivationParams,
   createMemoryChartActivationStore,
   defaultActivationInstance,
+  GLOBAL_HIDDEN_SCOPE,
   effectiveInstanceParams,
   effectiveMarketScope,
   isDefinitionAvailableOn,
@@ -57,8 +58,10 @@ export {
   sanitizeApplyScope,
   sanitizeInstance,
   symbolScopeKey,
+  withGlobalVisibility,
   withHiddenScopes,
   withMarketScope,
   type ChartActivationStore,
   type IndicatorSpecLike,
 } from './chart-activations.ts'
+export * from './amv-regime.ts'

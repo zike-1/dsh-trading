@@ -66,6 +66,7 @@ export function readoutItems(groups: readonly IndicatorReadoutGroup[], readoutIn
   const items: ReadoutItem[] = []
   for (const group of groups) {
     for (const output of group.outputs) {
+      if (output.noLegend === true) continue
       const value = output.values[readoutIndex]
       const precision = output.precision ?? 2
       items.push({

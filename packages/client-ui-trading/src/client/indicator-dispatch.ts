@@ -12,6 +12,7 @@
 import type { AuxBarSeriesMap, AuxSeriesKey, AuxSeriesMap, IndicatorDefinition, IndicatorInstance, IndicatorOutput } from '@dshtrading/indicators'
 import { effectiveInstanceParams, isDefinitionAvailableOn } from '@dshtrading/indicators'
 import { auxSeriesReady, barAuxSeriesReady } from './aux-series.ts'
+import { barFloatShares, type FloatShareEvent } from './float-history.ts'
 import type { Kline } from './types.ts'
 
 /** 调度输出：TvChart 的渲染输入 + 读数行/词条带要的身份字段。 */
@@ -52,10 +53,20 @@ export function dispatchIndicatorGroups(input: {
   aux: AuxSeriesMap
   barAux?: AuxBarSeriesMap
   liveKeys?: readonly string[]
+  /** 最新流通股本（股），经 compute 的 context 交给需要它的指标；缺失时不传。 */
+  floatShares?: number | undefined
+  /** 历史流通股本（只有装了通达信的机器有），对齐成逐根后交给指标。 */
+  floatHistory?: readonly FloatShareEvent[] | undefined
   deps: IndicatorDispatchDeps
 }): DispatchedIndicatorGroup[] {
   const { klines, instances, market, symbol, aux, deps } = input
   const barAux = input.barAux ?? {}
+  const context = {
+    market,
+    symbol,
+    floatShares: input.floatShares,
+    barFloatShares: input.floatHistory === undefined ? undefined : barFloatShares(klines, input.floatHistory),
+  }
   const groups: DispatchedIndicatorGroup[] = []
   for (const instance of instances) {
     const definition = deps.getDefinition(instance.id)
@@ -115,7 +126,7 @@ export function dispatchIndicatorGroups(input: {
       title: definition.title,
       pane: definition.pane,
       key: deps.instanceKey(instance),
-      outputs: definition.compute(klines, params),
+      outputs: definition.compute(klines, params, context),
     })
   }
   return groups

@@ -84,10 +84,10 @@ describe('预设工具面接线', () => {
   it('管理员：裁剪保持最小争议（用户明确「不用更激进」）', () => {
     // Given presets.ts 的 SURFACE 常量块
     // When 读取该块正文并检查裁剪口径
-    // Then trader 只拒 tasks 族、master 不拒任何族，且没有具体工具级裁剪
+    // Then trader 只拒 tasks 族、master 不拒任何族；具体工具级裁剪只有 zettaranc 这一处
     const block = /const SURFACE[^{]*\{([\s\S]*?)\n    \}/.exec(source)?.[1] ?? ''
     expect(block).toContain("trader: { denyFamilies: ['tasks'] }")
     expect(block).toContain("master: { denyFamilies: [] }")
-    expect(source).not.toContain('denyTools:')
+    expect(source.match(/denyTools:/g)).toHaveLength(1)
   })
 })

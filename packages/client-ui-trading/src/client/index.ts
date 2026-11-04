@@ -361,13 +361,7 @@ export function apply(ctx: ClientContext): void {
       // 槽注册处不参与推断（PR #74 合并遗留债，2026-09-07 顺手清偿）。
       toggleIndicator: (id: string) => { chart.togglePreset(id) },
       setIndicatorParams: (id: string, params: Record<string, number>, scopeKey?: string) => { chart.setParams(id, params, scopeKey) },
-      // symbol visibility：scopeKey = "<market>:<symbol>"；缺省（无聚焦标的）忽略——
-      // QuoteStage 在该情形走 toggleIndicator 全局语义。
-      setIndicatorVisible: (id: string, visible: boolean, scopeKey?: string) => {
-        const split = scopeKey !== undefined ? scopeKey.indexOf(':') : -1
-        if (scopeKey === undefined || split <= 0) return
-        chart.setSymbolVisibility(id, scopeKey.slice(0, split), scopeKey.slice(split + 1), visible)
-      },
+      setIndicatorVisible: (id: string, visible: boolean) => { chart.setGlobalVisibility(id, visible) },
       // 适用范围（按市场独立配置适用的 K 线级别）：scope === undefined 删除该市场条目。
       setIndicatorScope: (id: string, market: MarketId, scope: IndicatorMarketScope | undefined) => {
         chart.setMarketScope(id, market, scope)

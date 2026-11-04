@@ -85,6 +85,11 @@ describe('presets compute 输出契约', () => {
         : definition.computeAux?.(sample, instance.params, Object.fromEntries(
           definition.aux.map(key => [key, sample.map(bar => ({ date: bar.openTime, value: 10 + bar.close / 100 }))]),
         )) ?? []
+      if (definition.renderMode === 'background') {
+        expect(definition.pane).toBe('main')
+        expect(outputs).toEqual([])
+        continue
+      }
       expect(outputs.length, definition.id).toBeGreaterThan(0)
       const keys = new Set<string>()
       for (const output of outputs) {

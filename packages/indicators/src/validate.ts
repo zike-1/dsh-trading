@@ -11,6 +11,7 @@
  * 6. 有限数值与 warm-up 断言（严禁 NaN/Infinity/非法类型）
  */
 import type {
+  IndicatorComputeContext,
   IndicatorDefinition,
   IndicatorOutput,
   IndicatorPane,
@@ -119,7 +120,7 @@ export function createSampleBars(): Record<'uptrend' | 'downtrend' | 'flat' | 'g
 }
 
 /** 将源码解析为可执行纯函数。 */
-export function compileComputeSource(source: string): (bars: readonly Kline[], params: Readonly<Record<string, number>>) => IndicatorOutput[] {
+export function compileComputeSource(source: string): (bars: readonly Kline[], params: Readonly<Record<string, number>>, context?: IndicatorComputeContext) => IndicatorOutput[] {
   const trimmed = source.trim()
   if (
     /^(?:\([a-zA-Z0-9_,\s]*\)|[a-zA-Z0-9_]+)\s*=>/.test(trimmed)
@@ -127,11 +128,11 @@ export function compileComputeSource(source: string): (bars: readonly Kline[], p
   ) {
     // 表达式形式：(bars, params) => { ... } 或 function(bars, params) { ... }
     const factory = new Function(`"use strict"; return (${trimmed});`)
-    return factory() as (bars: readonly Kline[], params: Readonly<Record<string, number>>) => IndicatorOutput[]
+    return factory() as (bars: readonly Kline[], params: Readonly<Record<string, number>>, context?: IndicatorComputeContext) => IndicatorOutput[]
   }
   // 函数体语句形式：const closes = bars.map(b => b.close); ... return [...]
-  const factory = new Function('bars', 'params', `"use strict";\n${trimmed}`)
-  return factory as unknown as (bars: readonly Kline[], params: Readonly<Record<string, number>>) => IndicatorOutput[]
+  const factory = new Function('bars', 'params', 'context', `"use strict";\n${trimmed}`)
+  return factory as unknown as (bars: readonly Kline[], params: Readonly<Record<string, number>>, context?: IndicatorComputeContext) => IndicatorOutput[]
 }
 
 /** 默认浏览器纯 JS runner。 */
@@ -162,7 +163,7 @@ const WORKER_TRIAL_SCRIPT = `self.onmessage = (event) => {
     if (/^(?:\\([a-zA-Z0-9_,\\s]*\\)|[a-zA-Z0-9_]+)\\s*=>/.test(trimmed) || /^function\\b/.test(trimmed)) {
       fn = (new Function('"use strict"; return (' + trimmed + ');'))()
     } else {
-      fn = new Function('bars', 'params', '"use strict";\\n' + trimmed)
+      fn = new Function('bars', 'params', 'context', '"use strict";\\n' + trimmed)
     }
     const result = fn(bars, params)
     self.postMessage({ ok: true, result })
@@ -356,6 +357,39 @@ function checkIndicatorTrialOutputs(outputs: unknown, barsLength: number): strin
       }
       if (typeof v !== 'number' || !Number.isFinite(v)) {
         return `outputs[${outIdx}] (${output.key}) 在下标 ${valIdx} 处包含非法数值: ${String(v)}（只允许有限数字或 undefined 作为 warm-up）`
+      }
+    }
+
+    if (output.sticks !== undefined) {
+      if (!Array.isArray(output.sticks)) {
+        return `outputs[${outIdx}].sticks 必须是数组`
+      }
+      for (let stickIdx = 0; stickIdx < output.sticks.length; stickIdx++) {
+        const stick = output.sticks[stickIdx]
+        const valid = typeof stick === 'object' && stick !== null
+          && Number.isInteger(stick.index) && stick.index >= 0 && stick.index < barsLength
+          && Number.isFinite(stick.from) && Number.isFinite(stick.to) && Number.isFinite(stick.width)
+          && typeof stick.color === 'string' && stick.color.trim() !== ''
+        if (!valid) {
+          return `outputs[${outIdx}] (${output.key}) 的 sticks[${stickIdx}] 非法（需要范围内的 index、有限的 from/to/width 和颜色）`
+        }
+      }
+    }
+
+    if (output.labels !== undefined) {
+      if (!Array.isArray(output.labels)) {
+        return `outputs[${outIdx}].labels 必须是数组`
+      }
+      for (let labelIdx = 0; labelIdx < output.labels.length; labelIdx++) {
+        const label = output.labels[labelIdx]
+        const valid = typeof label === 'object' && label !== null
+          && Number.isInteger(label.index) && label.index >= 0 && label.index < barsLength
+          && Number.isFinite(label.price)
+          && typeof label.text === 'string' && label.text !== ''
+          && typeof label.color === 'string' && label.color.trim() !== ''
+        if (!valid) {
+          return `outputs[${outIdx}] (${output.key}) 的 labels[${labelIdx}] 非法（需要范围内的 index、有限的 price、文字和颜色）`
+        }
       }
     }
   }

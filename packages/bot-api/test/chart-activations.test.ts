@@ -219,10 +219,26 @@ describe('图表激活名册桥端点（issue #63）', () => {
       invalidates: ['chart'],
     })
 
-    // visible 缺 market → 业务拒绝
+    // 只带 symbol 不带 market → 业务拒绝
     const noMarket = await dispatchBridgeRequest(bridge, 'PUT', '/chart/indicators', new URLSearchParams(),
-      { id: 'td9', visible: true })
+      { id: 'td9', symbol: 'AAPL', visible: true })
     expect(noMarket).toMatchObject({ status: 200, payload: { ok: false, code: 'TRADING_INVALID_SCOPE' } })
+  })
+
+  it('用户关掉指标后对所有股票生效：PUT visible 不带 market 是全局开关，打开时清掉按标的的隐藏记录', async () => {
+    // Given 已挂载且在某只股票上隐藏过的指标，带自定义参数
+    const bridge = new TradingBridge(fakeHost())
+    const put = (body: unknown) => dispatchBridgeRequest(bridge, 'PUT', '/chart/indicators', new URLSearchParams(), body)
+    await put({ id: 'td9', params: { count: 7 } })
+    await put({ id: 'td9', market: 'us', symbol: 'GOOGL', visible: false })
+    // When 全局关掉
+    const off = await put({ id: 'td9', visible: false })
+    // Then 只留全局隐藏，参数还在
+    expect(off.payload).toMatchObject({ ok: true, instances: [{ id: 'td9', params: { count: 7 }, hiddenScopes: ['*'] }] })
+    // When 全局打开
+    const on = await put({ id: 'td9', visible: true })
+    // Then 隐藏记录全部清掉
+    expect((on.payload as { instances: Array<{ hiddenScopes?: string[] }> }).instances[0]?.hiddenScopes).toBeUndefined()
   })
 
   it('POST import 保真 hiddenScopes（symbol visibility 迁移不丢隐藏）', async () => {

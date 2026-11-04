@@ -1,0 +1,250 @@
+/* TdxScreenerPanel —— 右缘会话列容器的「选股」页签（宏观/预测市场同款模式：fixed 原位
+ * 覆盖对话列，定位与宽度吃 frame 轨道变量，见 shell-pad.css 规则 17）。
+ * 视觉随容器走：base 底、左缘 default 分隔线，无圆角无投影；控件尺寸与宏观面板一致。 */
+
+.panel {
+  position: fixed;
+  top: 0;
+  right: var(--dshtrading-sidebar-w, 44px);
+  bottom: 0;
+  width: var(--dshtrading-chat-user-w, 380px);
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  background: var(--dsw-futu-bg-base, #fff);
+  border: none;
+  border-left: 1px solid var(--dsw-futu-border-default, #e3e6ea);
+  border-radius: 0;
+  box-shadow: none;
+  z-index: 45;
+  overflow: hidden;
+}
+
+.head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--dsw-futu-border-default, #e3e6ea);
+  flex: none;
+}
+
+.title {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--dsw-futu-text-primary, #1a1e24);
+}
+
+.spacer {
+  flex: 1;
+}
+
+.closeBtn {
+  appearance: none;
+  border: none;
+  background: transparent;
+  color: var(--dsw-futu-text-secondary, #5f6672);
+  font-size: 16px;
+  line-height: 1;
+  width: 22px;
+  height: 22px;
+  border-radius: 6px;
+  cursor: pointer;
+}
+
+.closeBtn:hover {
+  background: var(--dsw-futu-bg-surface-active, rgba(0, 0, 0, 0.08));
+}
+
+.body {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  overflow: auto;
+  padding: 10px 12px 12px;
+}
+
+.controls {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: none;
+}
+
+.field {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.label {
+  flex: none;
+  font-size: 12px;
+  color: var(--dsw-futu-text-secondary, #5f6672);
+}
+
+.select {
+  flex: 1;
+  min-width: 0;
+  height: 28px;
+  padding: 0 6px;
+  border: 1px solid var(--dsw-futu-border-default, #e3e6ea);
+  border-radius: 6px;
+  background: var(--dsw-futu-bg-base, #fff);
+  color: var(--dsw-futu-text-primary, #1a1e24);
+  font-size: 12px;
+}
+
+.seg {
+  display: flex;
+  gap: 0;
+  flex: none;
+}
+
+.segBtn {
+  appearance: none;
+  height: 28px;
+  padding: 0 10px;
+  border: 1px solid var(--dsw-futu-border-default, #e3e6ea);
+  border-left: none;
+  background: transparent;
+  color: var(--dsw-futu-text-secondary, #5f6672);
+  font-size: 12px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.segBtn:first-child {
+  border-left: 1px solid var(--dsw-futu-border-default, #e3e6ea);
+  border-radius: 6px 0 0 6px;
+}
+
+.segBtn:last-child {
+  border-radius: 0 6px 6px 0;
+}
+
+.segBtn[aria-pressed='true'] {
+  color: #fff;
+  background: var(--dsw-futu-accent, #2563eb);
+  border-color: var(--dsw-futu-accent, #2563eb);
+}
+
+.ghostBtn,
+.primaryBtn {
+  appearance: none;
+  height: 28px;
+  padding: 0 12px;
+  border-radius: 6px;
+  font-size: 12px;
+  cursor: pointer;
+  white-space: nowrap;
+  flex: none;
+}
+
+.ghostBtn {
+  border: 1px solid var(--dsw-futu-border-default, #e3e6ea);
+  background: transparent;
+  color: var(--dsw-futu-text-primary, #1a1e24);
+}
+
+.ghostBtn:hover:not(:disabled) {
+  background: var(--dsw-futu-bg-surface-active, rgba(0, 0, 0, 0.06));
+}
+
+.primaryBtn {
+  border: 1px solid var(--dsw-futu-accent, #2563eb);
+  background: var(--dsw-futu-accent, #2563eb);
+  color: #fff;
+  font-weight: 600;
+}
+
+.ghostBtn:disabled,
+.primaryBtn:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.hint {
+  margin: 0;
+  padding: 2px 2px 0;
+  font-size: 11px;
+  line-height: 1.5;
+  color: var(--dsw-futu-text-secondary, #5f6672);
+  flex: none;
+}
+
+.empty,
+.error,
+.note {
+  margin: 0;
+  padding: 8px 4px;
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.empty {
+  color: var(--dsw-futu-text-secondary, #5f6672);
+}
+
+.error {
+  color: var(--dsw-futu-text-warning, #c2410c);
+}
+
+.note {
+  color: var(--dsw-futu-accent, #2563eb);
+}
+
+.summaryRow {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: none;
+  padding-top: 4px;
+  border-top: 1px solid var(--dsw-futu-border-default, #e3e6ea);
+}
+
+.summary {
+  font-size: 12px;
+  color: var(--dsw-futu-text-primary, #1a1e24);
+}
+
+.list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.row {
+  appearance: none;
+  width: 100%;
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  padding: 7px 4px;
+  border: none;
+  border-bottom: 1px solid var(--dsw-futu-border-subtle, #f0f2f5);
+  background: transparent;
+  text-align: left;
+  cursor: pointer;
+}
+
+.row:hover {
+  background: var(--dsw-futu-bg-surface-active, rgba(0, 0, 0, 0.04));
+}
+
+.name {
+  font-size: 13px;
+  color: var(--dsw-futu-text-primary, #1a1e24);
+}
+
+.code {
+  font-size: 11px;
+  color: var(--dsw-futu-text-secondary, #5f6672);
+  font-variant-numeric: tabular-nums;
+}

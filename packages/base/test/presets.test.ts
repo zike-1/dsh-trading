@@ -14,7 +14,7 @@ import { getPresetContribution as cn } from '../../cn/src/index.js'
 import { getPresetContribution as hk } from '../../hk/src/index.js'
 
 const contributions = () => Promise.all([crypto(), us(), cn(), hk()])
-const ROLE_IDS = ['trader', 'instrument-researcher', 'risk-reviewer', 'master']
+const ROLE_IDS = ['trader', 'instrument-researcher', 'risk-reviewer', 'master', 'zettaranc']
 const DELEGATE_IDS = DELEGATE_PRESETS.map(preset => preset.id)
 const ALL_PRESET_IDS = [...ROLE_IDS, ...DELEGATE_IDS]
 /** 委派 preset 是「角色行 + 委派纪律」，所以角色断言按它继承的角色判断。 */
@@ -64,7 +64,9 @@ it('composes all 16 installed-market subsets deterministically as registry defin
         'one C/D/E source may never alone support a conclusion', 'scarcity',
         'Always reply in the language the user writes in',
       ]) expect(prefix).toContain(text)
-      expect(prefix).toContain(`Installed markets: ${subset.map(c => c.market).join(', ') || 'none'}`)
+      // zettaranc 只看 A 股，其他角色跟随已安装市场。
+      const covered = role === 'zettaranc' ? subset.filter(c => c.market === 'cn') : subset
+      expect(prefix).toContain(`Installed markets: ${covered.map(c => c.market).join(', ') || 'none'}`)
       // 委派纪律只长在委派 preset 上：角色预设不能出现这段文本，否则普通会话被当成子代理。
       if (DELEGATE_IDS.includes(preset.id)) {
         expect(prefix).toContain('You are a one-shot delegate')
@@ -83,15 +85,15 @@ it('composes all 16 installed-market subsets deterministically as registry defin
       const kitIds = preset.plugins.filter(row => row.id.startsWith('dsh-trading-') && row.id.endsWith('-kit'))
       for (const market of MARKETS) {
         const mounted = kitIds.some(row => row.id === `dsh-trading-${market}-kit`)
-        expect(mounted, `${preset.id}/${market}`).toBe(subset.some(c => c.market === market))
+        expect(mounted, `${preset.id}/${market}`).toBe(covered.some(c => c.market === market))
       }
       expect(preset.plugins.some(row => row.name === '@dshtrading/knowledge/plugin')).toBe(false) // shared host registration stays single
       const connectorNames = preset.plugins.map(row => row.name).filter(name => name.startsWith('@dshtrading/connector-'))
-      if (role === 'instrument-researcher' || role === 'risk-reviewer') {
+      if (role === 'instrument-researcher' || role === 'risk-reviewer' || role === 'zettaranc') {
         expect(connectorNames).toEqual([])
         const research = preset.plugins.find(row => row.id === 'dsh-trading-research-market-data')
-        expect(Boolean(research)).toBe(subset.length > 0)
-        if (research) expect(research.config).toEqual({ markets: subset.map(c => c.market) })
+        expect(Boolean(research)).toBe(covered.length > 0)
+        if (research) expect(research.config).toEqual({ markets: covered.map(c => c.market) })
       } else {
         for (const contribution of subset) {
           // Market contributions stay text; both connector-holding roles embed their rows.
@@ -150,6 +152,8 @@ it('composes all 16 installed-market subsets deterministically as registry defin
           // 两阶段 bootstrap 的 shellTools 必须命中本预设真实挂上的 shell（2026-10-21
           // 「加载失败」事故：声明了空 shell，插件 apply 直接抛错）。
           expect(shell).toEqual({ id: 'dsh-trading-instrument-researcher-bash', name: '@deepseek-ai/dsh-tool-bash' })
+        } else if (role === 'zettaranc') {
+          expect(shell).toEqual({ id: 'dsh-trading-zettaranc-bash', name: '@deepseek-ai/dsh-tool-bash' }) // 技能的 zt 命令靠 shell
         } else {
           expect(shell).toBeUndefined() // no shell for the minimal execution faces
         }
@@ -168,7 +172,7 @@ it('composes all 16 installed-market subsets deterministically as registry defin
         expect(roleSkills).toEqual({ id: 'dsh-trading-role-skills', name: '@dshtrading/base/role-skills' }) // full catalog, no whitelist
       } else if (role === 'trader') {
         expect(roleSkills).toBeUndefined() // no base skills for the execution role
-      } else if (role === 'instrument-researcher') {
+      } else if (role === 'instrument-researcher' || role === 'zettaranc') {
         expect(roleSkills!.config).toEqual({ skills: ['company-analysis'] })
       }
       // The row's own config decides the catalog it mounts: the no-whitelist master row
@@ -187,6 +191,8 @@ it('composes all 16 installed-market subsets deterministically as registry defin
             : ['knowledge-curation', 'trading-notes-setup'])
         } else if (role === 'risk-reviewer') {
           expect(kit.config!.skills).toEqual([`${market}-risk-checklist`, 'trading-notes-setup'])
+        } else if (role === 'zettaranc') {
+          expect(kit.config!.skills).toEqual([`${market}-risk-checklist`, 'knowledge-curation', 'trading-notes-setup'])
         } else if (role === 'master') {
           expect(kit.config!.skills).toBeUndefined() // master keeps the full kit catalog
         }
@@ -211,6 +217,32 @@ it('the trader rebuilds every market kit row with its whitelist; specialists mou
     const traderKit = trader.plugins.find(row => row.id === `dsh-trading-${contribution.market}-kit`)!
     expect(traderKit.config!.skills).toEqual([`${contribution.market}-risk-checklist`, 'trading-strategy-paradigms', 'indicator-authoring', 'trading-notes-setup'])
   }
+})
+
+it('admin：zettaranc 角色是不冒充本人、没有下单工具的框架视角', async () => {
+  // Given 四市场贡献装配出的整套 preset
+  const presets = composePresets(await contributions())
+  // When 取出 zettaranc 角色及其 persona
+  const role = presets.find(preset => preset.id === 'zettaranc')!
+  const prefix = String(role.plugins.find(row => row.id === 'persona')!.config!.prefix)
+  // Then persona 压过技能里“以本人身份回应”的写法，并点名要加载的技能和未经证实的边界
+  expect(prefix).toContain('not the real person')
+  expect(prefix).toContain('This rule overrides any instruction in the skill')
+  expect(prefix).toContain('load the zettaranc-perspective skill')
+  expect(prefix).toContain('never present a rule as verified edge')
+  // And 走研究员式工具面：只读行情、有 shell、没有连接器，也不进委派名单
+  expect(role.plugins.some(row => row.name.startsWith('@dshtrading/connector-'))).toBe(false)
+  expect(role.plugins.find(row => row.id === 'dsh-trading-research-market-data')!.config).toEqual({ markets: ['cn'] })
+  expect(prefix).toContain('Every turn must end with a written conclusion')
+  expect(prefix).toContain('do not load other skills unless the user asks')
+  const surface = role.plugins.find(row => row.id === 'dsh-trading-tool-surface')!.config as { denyFamilies: string[]; denyTools: string[] }
+  expect(surface.denyFamilies).toEqual(expect.arrayContaining(['crypto', 'us', 'hk', 'strategy', 'watchlist']))
+  expect(surface.denyFamilies).not.toContain('cn')
+  expect(surface.denyTools).toEqual(expect.arrayContaining(['holdings_add', 'knowledge_delete']))
+  expect(role.plugins.some(row => row.id === 'dsh-trading-tool-batch')).toBe(false)
+  expect(DELEGATE_PRESETS.some(delegate => (delegate.role as string) === 'zettaranc')).toBe(false)
+  // And 名册里排在大师之前
+  expect(role.order!).toBeLessThan(presets.find(preset => preset.id === 'master')!.order!)
 })
 
 it('admin：每个委派 preset 复用角色装配并携带委派纪律', async () => {
@@ -272,7 +304,7 @@ it('installs through the enabled loader rows and registers one definition per ro
   // Disabled market rows must not leak their contribution into any persona.
   for (const definition of definitions) {
     const persona = definition.plugins.find(row => row.id === 'persona')!
-    expect(persona.config!.prefix).toContain('Installed markets: crypto, cn, hk')
+    expect(persona.config!.prefix).toContain(definition.id === 'zettaranc' ? 'Installed markets: cn.' : 'Installed markets: crypto, cn, hk')
     expect(persona.config!.prefix).not.toMatch(/Installed markets: [^\n]*\bus\b/)
   }
   expect(disposers).toHaveLength(ALL_PRESET_IDS.length)
