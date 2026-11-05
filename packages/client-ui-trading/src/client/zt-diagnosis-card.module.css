@@ -1,0 +1,143 @@
+/* ZtDiagnosisCard —— 图表工具条下方的 Z哥诊断卡；DataFreshness —— 图表下方的数据新鲜度一行。
+ * 视觉与选股页签一致：base 底、default 分隔线、6px 圆角控件。 */
+
+.card {
+  margin: 4px 12px 6px;
+  padding: 8px 10px 10px;
+  border: 1px solid var(--dsw-futu-border-default, #e3e6ea);
+  border-radius: 8px;
+  background: var(--dsw-futu-bg-base, #fff);
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.title {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--dsw-futu-text-primary, #1a1e24);
+}
+
+.spacer {
+  flex: 1;
+}
+
+.ghostBtn,
+.primaryBtn {
+  appearance: none;
+  height: 26px;
+  padding: 0 10px;
+  border-radius: 6px;
+  font-size: 12px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.ghostBtn {
+  border: 1px solid var(--dsw-futu-border-default, #e3e6ea);
+  background: transparent;
+  color: var(--dsw-futu-text-primary, #1a1e24);
+}
+
+.primaryBtn {
+  border: 1px solid var(--dsw-futu-accent, #2563eb);
+  background: var(--dsw-futu-accent, #2563eb);
+  color: #fff;
+  font-weight: 600;
+}
+
+.ghostBtn:disabled,
+.primaryBtn:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.closeBtn {
+  appearance: none;
+  border: none;
+  background: transparent;
+  color: var(--dsw-futu-text-secondary, #5f6672);
+  font-size: 16px;
+  line-height: 1;
+  width: 22px;
+  height: 22px;
+  border-radius: 6px;
+  cursor: pointer;
+}
+
+.closeBtn:hover {
+  background: var(--dsw-futu-bg-surface-active, rgba(0, 0, 0, 0.08));
+}
+
+.subtitle {
+  margin: 0;
+  font-size: 12px;
+  color: var(--dsw-futu-text-primary, #1a1e24);
+  font-variant-numeric: tabular-nums;
+}
+
+.grid {
+  margin: 0;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+  gap: 2px 16px;
+}
+
+.row {
+  display: flex;
+  gap: 8px;
+  min-width: 0;
+  padding: 3px 0;
+  border-bottom: 1px solid var(--dsw-futu-border-subtle, #f0f2f5);
+}
+
+.label {
+  flex: none;
+  width: 92px;
+  font-size: 12px;
+  color: var(--dsw-futu-text-secondary, #5f6672);
+}
+
+.value {
+  margin: 0;
+  min-width: 0;
+  font-size: 12px;
+  color: var(--dsw-futu-text-primary, #1a1e24);
+  overflow-wrap: anywhere;
+}
+
+.value[data-dropped='true'] {
+  color: var(--dsw-futu-text-warning, #c2410c);
+}
+
+.muted,
+.error,
+.note {
+  margin: 0;
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.muted {
+  color: var(--dsw-futu-text-secondary, #5f6672);
+}
+
+.error {
+  color: var(--dsw-futu-text-warning, #c2410c);
+}
+
+.note {
+  color: var(--dsw-futu-accent, #2563eb);
+}
+
+.freshness {
+  font-size: 11px;
+  padding: 2px 12px;
+  color: var(--dsw-futu-text-secondary, #5f6672);
+}

@@ -23,7 +23,11 @@ const SESSION_START_MINUTES = 9 * 60 + 15
 /** 缺口超过这么多个工作日说明通达信很久没更新，不拼接，整段交给接口。 */
 const MAX_TAIL_WEEKDAYS = 30
 /** 尾巴和本地重叠那根的收盘价差超过这个比例，说明缺口里有除权，本地历史的复权基准已过期。 */
-const OVERLAP_TOLERANCE = 0.005
+/**
+ * 本地最后一根与接口那根的收盘价允许的差（只容四舍五入）。原来 0.5%，缺口里的小额分红能混过去，
+ * 拼出一根假涨跌（2026-11-04 审核）；缺口里的除权另外按 gbbq 直接拒绝拼接（hasExRightsAfter）。
+ */
+const OVERLAP_TOLERANCE = 0.0005
 const TAIL_CACHE_MS = 60_000
 
 const STOCK_PREFIXES: Record<string, readonly string[]> = {
@@ -183,6 +187,11 @@ export function joinTail(local: readonly Kline[], tail: readonly Kline[]): Kline
 
 export type TailFetcher = (symbol: string, limit: number) => Promise<Kline[]>
 
+/** 本地最后一根之后有没有除权除息事件：有就说明本地前复权基准和接口不同，不能拼。 */
+export function hasExRightsAfter(events: readonly { date: number }[] | null, lastDate: number): boolean {
+  return (events ?? []).some(event => event.date > lastDate)
+}
+
 const tailCache = new Map<string, { at: number; lastDate: number; rows: Kline[] }>()
 /**
  * 补尾巴失败的时刻。失败也缓存同样久：页面每 30 秒重取一次，接口被拦时每次都要把两个 K 线域名
@@ -225,6 +234,21 @@ export async function readLocalBars(symbol: string): Promise<Kline[] | null> {
   }
 }
 
+/** 图表角落的数据新鲜度（GET /data-status）。日期都是 YYYY-MM-DD；没有本地数据 = null。 */
+export interface DataStatusWire {
+  /** 本地通达信日线最后一根的日期；之后的 K 线由行情接口补。 */
+  localThrough: string | null
+  /** 指南针活跃市值最后一天。 */
+  amvThrough: string | null
+}
+
+/** 本地通达信日线最后一根的日期（YYYY-MM-DD）；读不到本地数据 = null。 */
+export async function localDailyThrough(symbol: string): Promise<string | null> {
+  const local = await readLocalBars(symbol)
+  if (local === null || local.length === 0) return null
+  return new Date(local[local.length - 1]!.openTime).toISOString().slice(0, 10)
+}
+
 function barDate(bar: Kline): number {
   const day = new Date(bar.openTime)
   return day.getUTCFullYear() * 10000 + (day.getUTCMonth() + 1) * 100 + day.getUTCDate()
@@ -243,6 +267,9 @@ export async function localDailyKlines(symbol: string, limit: number | undefined
   const missing = missingWeekdays(lastDate, now)
   if (missing === 0) return local.slice(-count)
   if (missing > MAX_TAIL_WEEKDAYS) return null
+  // 缺口里已知有除权：本地和接口的复权基准不一致，拼起来或只给本地再追加实时价都会出假跳空，交给接口整段
+  const key = gbbqSymbol(symbol)
+  if (key !== null && hasExRightsAfter(await readLocalDividends(key), lastDate)) return null
   let tail: Kline[]
   try {
     tail = await cachedTail(symbol, lastDate, missing + 2, fetchTail, now)

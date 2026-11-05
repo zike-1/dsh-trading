@@ -3,7 +3,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
 import type { Kline } from '@dshtrading/api'
-import { decodeDayFile, forwardAdjust, isAShareEtf, isAShareStock, joinTail, localDailyKlines, missingWeekdays, sinceLastSplit, toKlines } from '../src/local-klines.ts'
+import { decodeDayFile, forwardAdjust, hasExRightsAfter, isAShareEtf, isAShareStock, joinTail, localDailyKlines, localDailyThrough, missingWeekdays, sinceLastSplit, toKlines } from '../src/local-klines.ts'
 
 function dayRecord(date: number, open: number, high: number, low: number, close: number, shares: number, amount = 0): Buffer {
   const raw = Buffer.alloc(32)
@@ -163,6 +163,14 @@ describe('localDailyKlines', () => {
   }
   const never = async (): Promise<Kline[]> => { throw new Error('不该请求接口') }
 
+  it('用户在图表角落看到本地日线到哪天；没有本地文件或不是 A 股 = null', async () => {
+    await withTdx(async () => {
+      expect(await localDailyThrough('000860.SZ')).toBe('2026-11-02')
+      expect(await localDailyThrough('000001.SZ')).toBeNull()
+      expect(await localDailyThrough('AAPL')).toBeNull()
+    })
+  })
+
   it('用户在数据已更新时完全不请求接口', async () => {
     await withTdx(async () => {
       // Given 本地到周一，现在周二盘前
@@ -249,5 +257,20 @@ describe('个股判断', () => {
     expect(isAShareEtf('sz161725')).toBe(false)
     expect(isAShareEtf('sh000001')).toBe(false)
     expect(isAShareEtf('sh600519')).toBe(false)
+  })
+})
+
+
+describe('日线拼接只接复权基准一致的尾巴', () => {
+  it('收盘差 0.4%（缺口里的小额分红）不再拼接；四舍五入的差可以', () => {
+    const local = [kline(20261102, 100)]
+    expect(joinTail(local, [kline(20261102, 99.6), kline(20261103, 99.6)])).toBeNull()
+    expect(joinTail(local, [kline(20261102, 100.01), kline(20261103, 101)])?.map(row => row.close)).toEqual([100, 101])
+  })
+
+  it('本地最后一根之后有除权事件：判定为不能拼', () => {
+    expect(hasExRightsAfter([{ date: 20261030 }, { date: 20261104 }], 20261103)).toBe(true)
+    expect(hasExRightsAfter([{ date: 20261030 }], 20261103)).toBe(false)
+    expect(hasExRightsAfter(null, 20261103)).toBe(false)
   })
 })

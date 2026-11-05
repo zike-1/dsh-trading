@@ -248,3 +248,51 @@
   color: var(--dsw-futu-text-secondary, #5f6672);
   font-variant-numeric: tabular-nums;
 }
+
+/* 技能复核（2026-11-04）：每行第二行写理由；剔除的名字变淡。 */
+.row {
+  flex-direction: column;
+  align-items: stretch;
+  gap: 2px;
+}
+
+.rowMain {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+}
+
+.row[data-dropped='true'] .name {
+  color: var(--dsw-futu-text-secondary, #5f6672);
+}
+
+.tag {
+  margin-left: auto;
+  flex: none;
+  padding: 0 6px;
+  border-radius: 4px;
+  font-size: 11px;
+  line-height: 18px;
+}
+
+.tag[data-kept='true'] {
+  color: #15803d;
+  background: rgba(21, 128, 61, 0.08);
+}
+
+.tag[data-kept='false'] {
+  color: var(--dsw-futu-text-warning, #c2410c);
+  background: rgba(194, 65, 12, 0.08);
+}
+
+.reason {
+  font-size: 11px;
+  line-height: 1.4;
+  color: var(--dsw-futu-text-secondary, #5f6672);
+  overflow-wrap: anywhere;
+}
+
+.tag[data-kept='pending'] {
+  color: var(--dsw-futu-warn, #d97706);
+  background: rgba(217, 119, 6, 0.1);
+}

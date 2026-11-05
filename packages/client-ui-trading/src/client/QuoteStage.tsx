@@ -34,6 +34,7 @@ import {
   removeKdasDay, utcDayNum,
 } from './kdas-menu.ts'
 import { IconIndicators } from './icons.tsx'
+import { DataFreshness, ZtDiagnosisCard } from './ZtDiagnosisCard.tsx'
 import type { MarketLocaleKey } from './contract.ts'
 import {
   INTRADAY_INTERVALS, changePercent, directionColor,
@@ -233,6 +234,8 @@ export function QuoteStage({ t, useSelection, useChart, toggleIndicator, setIndi
     return readInterval(market)
   })
   const [daily, setDaily] = useState<Kline[] | null>(null)
+  /** Z哥诊断卡（A 股日线工具条按钮）。 */
+  const [ztCardOpen, setZtCardOpen] = useState(false)
   const [klines, setKlines] = useState<Kline[] | null>(null)
   /** klines 所属级别：切级别后旧的上一级别数据在途期间不得被当成新级别数据消费
    * （五日级别尤其致命——拿日 K 当 1m 分组会算出假的量比档位）。 */
@@ -922,10 +925,6 @@ export function QuoteStage({ t, useSelection, useChart, toggleIndicator, setIndi
 
   const readoutIndex = hoverIndex ?? (seriesKlines !== null && seriesKlines.length > 0 ? seriesKlines.length - 1 : null)
   const readoutCandle = seriesKlines !== null && readoutIndex !== null ? seriesKlines[readoutIndex] : undefined
-  const amvReadoutDay = readoutCandle === undefined ? undefined : new Date(readoutCandle.openTime).toISOString().slice(0, 10)
-  const amvReadout = amvEnabled && amvReadoutDay !== undefined && amvHistory?.points.some(point => point.date === amvReadoutDay && point.state !== null)
-    ? amvHistory.intervals.find(interval => interval.start <= amvReadoutDay && interval.end >= amvReadoutDay)
-    : undefined
   // 读数行昨收跟随十字光标：悬停历史K线取当前周期序列的前一根收盘价（日K下即该日
   // 昨收）；未悬停或悬停最新一根沿用官方锚点 ticker.prevClose（日K补齐滞后时序列
   // 倒数第二根会错位一个交易日，见上方 stats 注释）；序列首根无前一根则留空。
@@ -1060,6 +1059,20 @@ export function QuoteStage({ t, useSelection, useChart, toggleIndicator, setIndi
   const tickerName = (ticker as { name?: string })?.name
   const displayName = (!isPlaceholderName ? rawName : (tickerName || rawName || symbol))
 
+  // 数据新鲜度 + 更新时间：图表页签放在「昨收 开 高 低 量」同一行的右侧，其余页签留在标题行
+  const metaNode = (
+    <span className={css.meta}>
+      {market === 'cn' && symbol !== undefined && (
+        <DataFreshness
+          t={t}
+          symbol={symbol}
+          lastBarDate={daily !== null && daily.length > 0 ? new Date(daily[daily.length - 1]!.openTime).toISOString().slice(0, 10) : null}
+        />
+      )}
+      {ticker !== null && <span>{t('quote.updated')} {fmtClock(ticker.timestamp)}</span>}
+    </span>
+  )
+
   return (
     <div className={css.root} data-dshtrading-quote-stage="">
       {/* 顶部报价头与二级 Sub-Tab 导航（图表 | 基本面） */}
@@ -1132,9 +1145,7 @@ export function QuoteStage({ t, useSelection, useChart, toggleIndicator, setIndi
             {t('quote.tab.announcements')}
           </button>
         </div>
-        <span className={css.meta}>
-          {ticker !== null && <span>{t('quote.updated')} {fmtClock(ticker.timestamp)}</span>}
-        </span>
+        {viewTab !== 'chart' && metaNode}
 
       </div>
 
@@ -1162,6 +1173,7 @@ export function QuoteStage({ t, useSelection, useChart, toggleIndicator, setIndi
               onOpenStage={() => { setStageTab('derivatives') }}
             />
           )}
+          {metaNode}
         </div>
       )}
 
@@ -1188,6 +1200,18 @@ export function QuoteStage({ t, useSelection, useChart, toggleIndicator, setIndi
           </div>
 
         <div className={css.toolbarActions}>
+          {/* Z哥诊断：技能按每日报告规则算出的要点卡（只读，不用大模型；A 股） */}
+          {(market === 'cn' || market === 'hk') && symbol !== undefined && (
+            <button
+              type="button"
+              className={css.pickerButton}
+              data-active={ztCardOpen ? 'true' : undefined}
+              aria-pressed={ztCardOpen}
+              onClick={() => { setZtCardOpen(open => !open) }}
+            >
+              {t('zt.diagnose')}
+            </button>
+          )}
           {/* 交易工作台开关（issue #40；支持接入了交易注册面的各市场） */}
           <button
             type="button"
@@ -1325,12 +1349,6 @@ export function QuoteStage({ t, useSelection, useChart, toggleIndicator, setIndi
       )}
 
       {viewTab === 'chart' && kError !== null && <div className={css.error}>{t('quote.loadFailedColon', { error: kError })}</div>}
-      {viewTab === 'chart' && amvEnabled && (
-        <div role="status" style={{ fontSize: 11, padding: '4px 12px', color: 'var(--dsw-futu-text-secondary, #5f6672)' }}>
-          {t('amv.title')} · {amvHistory === undefined ? t('amv.loading') : `${amvHistory.available ? t('amv.coverage', { first: amvHistory.firstDate, last: amvHistory.lastDate }) : ''}${amvHistory.notice}`}
-          {amvReadout !== undefined && <span> {t('amv.current', { state: amvReadout.state === 'bull' ? t('amv.bull') : t('amv.bear'), start: amvReadout.start, end: amvReadout.end })}</span>}
-        </div>
-      )}
       {viewTab === 'chart' && market === 'cn' && chartInterval !== '1d' && visibleInstances.some(instance => instance.id === 'amv-regime') && (
         <div role="status" style={{ fontSize: 11, padding: '4px 12px' }}>{t('amv.dailyOnly')}</div>
       )}
@@ -1434,6 +1452,9 @@ export function QuoteStage({ t, useSelection, useChart, toggleIndicator, setIndi
                 </div>
               )
             })()}
+            {ztCardOpen && (market === 'cn' || market === 'hk') && symbol !== undefined && (
+              <ZtDiagnosisCard t={t} symbol={symbol} name={instrument?.name} onClose={() => { setZtCardOpen(false) }} />
+            )}
             {rangeMode && rangeStats !== null && (
               <div className={css.rangePanel} role="dialog" aria-label={t('quote.rangeStats')}>
                 <div className={css.rangePanelHead}>

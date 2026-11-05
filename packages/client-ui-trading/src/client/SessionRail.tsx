@@ -27,13 +27,14 @@ import type { InjectFace, PropsLocale, PropsRuntime } from '@deepseek-ai/dsh-cli
 import type { FoldStore } from './fold-store.ts'
 import type { RightbarStore } from './rightbar-store.ts'
 import { holdingsPanelStore, setHoldingsPanelOpen } from './holdings-store.ts'
-import { IconClock, IconFlash, IconFolder, IconFoldPanel, IconFunnel, IconGlobe, IconNewSession, IconPrediction, IconWallet } from './icons.tsx'
+import { IconClock, IconFlash, IconFolder, IconFoldPanel, IconFunnel, IconReport, IconGlobe, IconNewSession, IconPrediction, IconWallet } from './icons.tsx'
 import { ScheduledTasksPanel } from './ScheduledTasksPanel.tsx'
 import { HoldingsPanel } from './HoldingsPanel.tsx'
 import { FlashPanel } from './FlashPanel.tsx'
 import { MacroPanel } from './MacroPanel.tsx'
 import { PolymarketPanel } from './PolymarketPanel.tsx'
 import { TdxScreenerPanel } from './TdxScreenerPanel.tsx'
+import { ReportPanel } from './ReportPanel.tsx'
 import css from './session-rail.module.css'
 
 export interface SessionRailInjected {
@@ -69,6 +70,8 @@ export function SessionRail({ t, useFolded, useRightbar, startNewSession, toggle
   const [predictionOpen, setPredictionOpen] = useState(false)
   // 选股页签（功能页签 7 号，2026-11-04）：通达信自己的公式引擎选股；与其余页签互斥。
   const [screenerOpen, setScreenerOpen] = useState(false)
+  // 报告页签（功能页签 8 号，2026-11-04）：zettaranc 每日报告与前向检验；与其余页签互斥。
+  const [reportOpen, setReportOpen] = useState(false)
   // 文件页签（功能页签 5 号，2026-09-15）：宿主右侧栏 dock 展开态的镜像
   // （rightbar-store），不是本组件的私有开关——宿主侧入口同样点亮/熄灭。
   const filesOpen = useRightbar(value => value)
@@ -113,45 +116,55 @@ export function SessionRail({ t, useFolded, useRightbar, startNewSession, toggle
     return () => { delete document.body.dataset.dshtradingScreenerOpen }
   }, [screenerOpen])
 
+  useEffect(() => {
+    document.body.dataset.dshtradingReportOpen = reportOpen ? 'on' : 'off'
+    return () => { delete document.body.dataset.dshtradingReportOpen }
+  }, [reportOpen])
+
   // 互斥联动（六页签共用同一容器）：资产面板打开（含 QuoteStage 下单成功
   // 的跨树联动）→ 收定时任务/快讯/宏观/预测市场并收起宿主右侧栏。
   useEffect(() => {
-    if (holdingsOpen) { setTasksOpen(false); setFlashOpen(false); setMacroOpen(false); setPredictionOpen(false); setScreenerOpen(false); collapseRightbar() }
+    if (holdingsOpen) { setTasksOpen(false); setFlashOpen(false); setMacroOpen(false); setPredictionOpen(false); setScreenerOpen(false); setReportOpen(false); collapseRightbar() }
   }, [holdingsOpen])
 
   // 宿主右侧栏展开（含宿主侧打开，如对话内文件链接）→ 收定时任务/资产/快讯/宏观/预测市场。
   useEffect(() => {
-    if (filesOpen) { setTasksOpen(false); setHoldingsPanelOpen(false); setFlashOpen(false); setMacroOpen(false); setPredictionOpen(false); setScreenerOpen(false) }
+    if (filesOpen) { setTasksOpen(false); setHoldingsPanelOpen(false); setFlashOpen(false); setMacroOpen(false); setPredictionOpen(false); setScreenerOpen(false); setReportOpen(false) }
   }, [filesOpen])
 
   const toggleTasks = (next: boolean): void => {
     setTasksOpen(next)
-    if (next) { setHoldingsPanelOpen(false); setFlashOpen(false); setMacroOpen(false); setPredictionOpen(false); setScreenerOpen(false); collapseRightbar() }
+    if (next) { setHoldingsPanelOpen(false); setFlashOpen(false); setMacroOpen(false); setPredictionOpen(false); setScreenerOpen(false); setReportOpen(false); collapseRightbar() }
   }
 
   const toggleFlash = (next: boolean): void => {
     setFlashOpen(next)
-    if (next) { setTasksOpen(false); setHoldingsPanelOpen(false); setMacroOpen(false); setPredictionOpen(false); setScreenerOpen(false); collapseRightbar() }
+    if (next) { setTasksOpen(false); setHoldingsPanelOpen(false); setMacroOpen(false); setPredictionOpen(false); setScreenerOpen(false); setReportOpen(false); collapseRightbar() }
   }
 
   const toggleMacro = (next: boolean): void => {
     setMacroOpen(next)
-    if (next) { setTasksOpen(false); setHoldingsPanelOpen(false); setFlashOpen(false); setPredictionOpen(false); setScreenerOpen(false); collapseRightbar() }
+    if (next) { setTasksOpen(false); setHoldingsPanelOpen(false); setFlashOpen(false); setPredictionOpen(false); setScreenerOpen(false); setReportOpen(false); collapseRightbar() }
   }
 
   const togglePrediction = (next: boolean): void => {
     setPredictionOpen(next)
-    if (next) { setTasksOpen(false); setHoldingsPanelOpen(false); setFlashOpen(false); setMacroOpen(false); setScreenerOpen(false); collapseRightbar() }
+    if (next) { setTasksOpen(false); setHoldingsPanelOpen(false); setFlashOpen(false); setMacroOpen(false); setScreenerOpen(false); setReportOpen(false); collapseRightbar() }
   }
 
   const toggleScreener = (next: boolean): void => {
     setScreenerOpen(next)
-    if (next) { setTasksOpen(false); setHoldingsPanelOpen(false); setFlashOpen(false); setMacroOpen(false); setPredictionOpen(false); collapseRightbar() }
+    if (next) { setTasksOpen(false); setHoldingsPanelOpen(false); setFlashOpen(false); setMacroOpen(false); setPredictionOpen(false); setReportOpen(false); collapseRightbar() }
+  }
+
+  const toggleReport = (next: boolean): void => {
+    setReportOpen(next)
+    if (next) { setTasksOpen(false); setHoldingsPanelOpen(false); setFlashOpen(false); setMacroOpen(false); setPredictionOpen(false); setScreenerOpen(false); collapseRightbar() }
   }
 
   const toggleHoldings = (next: boolean): void => {
     setHoldingsPanelOpen(next)
-    if (next) { setTasksOpen(false); setFlashOpen(false); setMacroOpen(false); setPredictionOpen(false); setScreenerOpen(false); collapseRightbar() }
+    if (next) { setTasksOpen(false); setFlashOpen(false); setMacroOpen(false); setPredictionOpen(false); setScreenerOpen(false); setReportOpen(false); collapseRightbar() }
   }
 
   /**
@@ -166,6 +179,7 @@ export function SessionRail({ t, useFolded, useRightbar, startNewSession, toggle
     setMacroOpen(false)
     setPredictionOpen(false)
     setScreenerOpen(false)
+    setReportOpen(false)
     setHoldingsPanelOpen(false)
     collapseRightbar()
   }
@@ -273,6 +287,17 @@ export function SessionRail({ t, useFolded, useRightbar, startNewSession, toggle
       >
         <IconFunnel size={16} />
       </button>
+      {/* 报告页签（功能页签 8 号，2026-11-04）：每日报告（点股票切图）与前向检验；与其余页签互斥。 */}
+      <button
+        type="button"
+        className={css.button}
+        aria-pressed={reportOpen}
+        aria-label={t('stage.report')}
+        title={t('stage.report')}
+        onClick={() => { toggleReport(!reportOpen) }}
+      >
+        <IconReport size={16} />
+      </button>
       {tasksOpen && (
         <ScheduledTasksPanel
           t={t}
@@ -308,6 +333,12 @@ export function SessionRail({ t, useFolded, useRightbar, startNewSession, toggle
         <TdxScreenerPanel
           t={t}
           onClose={() => { setScreenerOpen(false) }}
+        />
+      )}
+      {reportOpen && (
+        <ReportPanel
+          t={t}
+          onClose={() => { setReportOpen(false) }}
         />
       )}
     </div>

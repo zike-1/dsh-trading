@@ -14,6 +14,10 @@
 | 右缘竖栏「选股」页签：用**通达信自己的公式引擎**跑你的选股公式 | 通达信金融终端（带 TQ 策略 Python 插件）开着 + zettaranc 技能 | 面板提示「通达信引擎不可用」 |
 | 自选「今日选股」分组自动同步 | zettaranc 技能的每日报告写出 `report-picks.json` | 不同步，分组保持原样 |
 | `Zettaranc（Z哥视角）` 分析角色 | zettaranc 技能 | 角色仍可用，但没有技能的规则与命令 |
+| 图表工具条「Z哥诊断」浮窗：按技能规则算出选股结论、砖块、B1、卖出信号、黄白线、BOLL、活跃市值，可复制给 Z哥角色解读；港股只作参考 | zettaranc 技能（港股另需在通达信同步港股日线） | 浮窗写明「技能不可用」及原因 |
+| 选股页签的结果按技能规则复核：留下 / 剔除 / 待复核（本地数据早于选股日时不参与剔除） | zettaranc 技能 | 照常列出通达信的原始结果 |
+| 右缘「报告」页签：每日报告（点股票切图）与前向检验（入选后 5 / 10 日对比同日随机基准、上证、被剔除的票） | zettaranc 技能的每日报告 + `local-data.json` 的 `reportDir` | 提示「未配置」 |
+| 顶部一行数据新鲜度：本地日线、活跃市值各到哪天 | 通达信 / 指南针 | 不显示 |
 | 自选添加框搜索修复、A 股成交量单位修复 | 无 | — |
 
 ## 0. 安装（Windows）
@@ -33,12 +37,14 @@
 ```json
 {
   "tdxDir": "D:/new_tdx64",
-  "zhinanzhenDataDir": "D:/Program Files/WavMain/ANALYSE/Data/ChinaStk"
+  "zhinanzhenDataDir": "D:/Program Files/WavMain/ANALYSE/Data/ChinaStk",
+  "reportDir": "D:/stock/reports"
 }
 ```
 
 - `tdxDir`：通达信安装目录，里面要有 `vipdoc/`（日线 `.day` 文件）和 `T0002/hq_cache/gbbq`（除权）。路径以你自己的安装位置为准。
 - `zhinanzhenDataDir`：指南针的 `ANALYSE/Data/ChinaStk` 目录，里面的 `Z_SK/day.vdat` 存活跃市值 0AMV。没有指南针就不写这一项。
+- `reportDir`：zettaranc 每日报告的目录（技能 `.env` 里的 `REPORT_OUT_DIR`，里面有 `data/YYYY-MM-DD.json`），「报告」页签读它。不用报告就不写。
 
 改完不用重启，下一次请求就会读到。也可以用环境变量覆盖（优先级更高）：
 
@@ -51,6 +57,7 @@
 | `DSH_TRADING_AMV_CALENDAR_FILE` | 交易日历（默认取通达信上证指数日线） |
 | `DSH_ZT_SKILL_DIR` | zettaranc 技能目录（默认 `DSH_HOME/skills/zettaranc-perspective`） |
 | `DSH_REPORT_PICKS_FILE` | 每日选股名单文件（默认 `DSH_HOME/report-picks.json`） |
+| `DSH_TRADING_REPORT_DIR` | 每日报告目录（同 `reportDir`） |
 
 **数据新鲜度**：本地日线只到通达信最后一次下载盘后数据的那天，当天缺的一根由行情接口补；活跃市值要在指南针里打开过 0AMV 页面才会写进本地文件（只开关指南针不会更新）。
 

@@ -216,6 +216,16 @@ export function IconFunnel({ size = 16 }: { size?: number }): ReactElement {
   )
 }
 
+/** 每日报告（右缘页签 8 号）：一页纸 + 三行字。 */
+export function IconReport({ size = 16 }: { size?: number }): ReactElement {
+  return (
+    <svg viewBox="0 0 16 16" width={size} height={size} aria-hidden="true" fill="none" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M4 1.75h5.5L12.25 4.5v9.75H4z" />
+      <path d="M6 7h4.5M6 9.5h4.5M6 12h2.75" />
+    </svg>
+  )
+}
+
 /** 勾选（分组选中态）。 */
 export function IconCheck({ size = 12 }: { size?: number }): ReactElement {
   return (

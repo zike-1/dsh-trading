@@ -51,10 +51,51 @@ export interface TdxSelectRequest {
   date?: string
 }
 
+export interface ZtReviewItemWire {
+  /** 6 位代码。 */
+  code: string
+  name: string
+  /** 按每日报告的选股规则：true = 留下，false = 剔除。 */
+  kept: boolean
+  /** 剔除原因（留下时为空）。 */
+  reason: string
+  /** 买入理由（剔除时为空）。 */
+  reasons: string[]
+  /** 技能的单只视图（砖块、B1、卖出信号、黄白线、BOLL 等），字段见技能 StockView。 */
+  view: Record<string, unknown>
+  /** A / HK；港股只作参考。 */
+  market: string
+  /** 参考说明（港股：规则按 A 股、未复权、活跃市值是 A 股指标）。 */
+  notes: string[]
+  /** kept 留下 / dropped 剔除 / stale 待复核（本地数据早于选股日，不参与剔除）。 */
+  status: 'kept' | 'dropped' | 'stale'
+}
+
+export type ZtReviewWire =
+  | { ok: true; available: true; items: ZtReviewItemWire[]; amv: Record<string, unknown> | null; overlayDate: string }
+  | { ok: true; available: false; reason: string }
+
+export interface ZtReviewRequest {
+  codes: readonly string[]
+  /** 选出这些股票的公式名，写进买入理由。 */
+  source?: string
+  /** 选股日 YYYYMMDD：本地数据早于它的标「待复核」（盘中通达信用当天实时数据选，本地日线还在昨天）。 */
+  date?: string
+}
+
 export interface TdxFormulaRunnerLike {
   listFormulas(): Promise<TdxFormulasWire>
   select(request: TdxSelectRequest): Promise<TdxSelectWire>
+  /** 按每日报告的规则复核几只股票（选股页签的过滤、Z哥诊断卡）；只读。 */
+  review(request: ZtReviewRequest): Promise<ZtReviewWire>
+  /** 每日报告入选股的前向检验（对比同日随机基准与上证）；只读。reportDir 缺省用技能 .env 的 REPORT_OUT_DIR。 */
+  forwardTest(reportDir?: string): Promise<ZtForwardTestWire>
 }
+
+/** 前向检验结果原样透传（字段见技能 modules/forward_test.py）。 */
+export type ZtForwardTestWire =
+  | { ok: true; available: true; result: Record<string, unknown> }
+  | { ok: true; available: false; reason: string }
 
 export type ExecLike = (file: string, args: readonly string[], options: { cwd: string; timeout: number; env: NodeJS.ProcessEnv }) => Promise<string>
 
@@ -83,6 +124,27 @@ export function selectArgs(request: TdxSelectRequest): string[] {
   if (request.date !== undefined && request.date !== '') {
     if (!DATE_RE.test(request.date)) throw new Error(`invalid date: ${JSON.stringify(request.date)}`)
     args.push('--date', request.date)
+  }
+  return args
+}
+
+const CODE_RE = /^(\d{6}(\.(SH|SZ|BJ))?|\d{5}\.HK)$/
+/** 复核一次最多几只（技能侧同样截断；每只约半秒）。 */
+export const REVIEW_LIMIT = 120
+
+export function reviewArgs(request: ZtReviewRequest): string[] {
+  const codes = [...new Set(request.codes.map(code => code.trim().toUpperCase()).filter(code => CODE_RE.test(code)))].slice(0, REVIEW_LIMIT)
+  if (codes.length === 0) throw new Error('invalid codes: need A-share codes like 600795.SH or HK codes like 00700.HK')
+  const args = ['review', '--codes', codes.join(',')]
+  const source = (request.source ?? '').trim()
+  if (source !== '') {
+    if (source.startsWith('-') || source.length > 60) throw new Error(`invalid source: ${JSON.stringify(request.source)}`)
+    args.push('--source', source)
+  }
+  const date = (request.date ?? '').trim()
+  if (date !== '') {
+    if (!/^\d{8}$/.test(date)) throw new Error(`invalid date: ${JSON.stringify(request.date)}`)
+    args.push('--date', date)
   }
   return args
 }
@@ -148,6 +210,39 @@ export function createZtTdxRunner(options: {
         totalHits: Number(payload.total_hits ?? 0),
         picks: picks.map(pick => ({ code: String(pick.code ?? ''), name: String(pick.name ?? '') })).filter(pick => pick.code !== ''),
       }
+    },
+    async review(request) {
+      const payload = await runSafe(reviewArgs(request))
+      if (payload.ok !== true) return unavailable(payload)
+      const items = Array.isArray(payload.items) ? payload.items as Array<Record<string, unknown>> : []
+      const isObject = (value: unknown): value is Record<string, unknown> => typeof value === 'object' && value !== null && !Array.isArray(value)
+      return {
+        ok: true,
+        available: true,
+        items: items
+          .map((item): ZtReviewItemWire => ({
+            code: String(item.code ?? ''),
+            name: String(item.name ?? ''),
+            kept: item.kept === true,
+            reason: String(item.reason ?? ''),
+            reasons: Array.isArray(item.reasons) ? item.reasons.map(String) : [],
+            view: isObject(item.view) ? item.view : {},
+            market: typeof item.market === 'string' && item.market !== '' ? item.market : 'A',
+            notes: Array.isArray(item.notes) ? item.notes.map(String) : [],
+            status: item.status === 'stale' || item.status === 'dropped' || item.status === 'kept'
+              ? item.status
+              : (item.kept === true ? 'kept' as const : 'dropped' as const),
+          }))
+          .filter(item => item.code !== ''),
+        amv: isObject(payload.amv) ? payload.amv : null,
+        overlayDate: String(payload.overlay_date ?? ''),
+      }
+    },
+    async forwardTest(reportDir) {
+      const payload = await runSafe(reportDir === undefined || reportDir === '' ? ['forward-test'] : ['forward-test', '--out', reportDir])
+      if (payload.ok !== true) return unavailable(payload)
+      const { ok: _ok, ...result } = payload
+      return { ok: true, available: true, result }
     },
   }
 }

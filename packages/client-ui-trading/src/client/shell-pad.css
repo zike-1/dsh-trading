@@ -257,3 +257,10 @@ body[data-dshtrading-prediction-open='on'] div:has(> [data-shell-overlay]) > div
 body[data-dshtrading-screener-open='on'] div:has(> [data-shell-overlay]) > div:nth-child(2) > * {
   display: none !important;
 }
+
+/* 18) 2026-11-04 每日报告面板 = 会话列容器的切换页签 8 号（zettaranc 每日报告与前向检验，只读；
+      与其余页签同款模式、八者互斥）：报告按钮激活时隐去对话列直接子节点，ReportPanel（fixed，
+      定位吃同一组轨道变量）原位覆盖。body[data-dshtrading-report-open] 由 SessionRail effect 写入。 */
+body[data-dshtrading-report-open='on'] div:has(> [data-shell-overlay]) > div:nth-child(2) > * {
+  display: none !important;
+}

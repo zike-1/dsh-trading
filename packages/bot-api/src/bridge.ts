@@ -23,7 +23,7 @@
  */
 import { readLocalAmv } from './local-amv.ts'
 import { readLocalFloatHistory } from './local-gbbq.ts'
-import { localDailyKlines } from './local-klines.ts'
+import { localDailyKlines, localDailyThrough, type DataStatusWire } from './local-klines.ts'
 import { instrumentFormOf } from '@dshtrading/api'
 import type { ActiveBuySnapshot, AccountBalance, DerivativesData, DerivativesHistory, FundamentalsPackage, InstrumentAssetClass, InstrumentForm, InstrumentRef, Interval, Kline, KlineCapability, MacroCalendarEntry, MacroRateEntry, MarketDataService, NewsAggregator, NewsItem, Order, Orderbook, OrderRequest, Position, PredictionFeed, PredictionMeeting, SouthboundHoldingHistory, StockFundamentals, Ticker, TradeFill, TradeService, TradeTick } from '@dshtrading/api'
 import { aggregateNews as aggregateCnNews, fetchCnFundamentalsPackage } from '@dshtrading/kit-cn'
@@ -57,7 +57,9 @@ import { createFxService } from '@dshtrading/holdings/fx'
 import { GuiApprovalDeniedError, type GuiApprovalSeat, type GuiLiveAction } from './gui-approval.ts'
 import { TtlCache } from './ttl-cache.ts'
 import { mergeActiveBuyPoints, readActiveBuySnapshots, shanghaiDate, type ActiveBuyWire } from './active-buy.ts'
-import type { TdxFormulaRunnerLike, TdxFormulasWire, TdxSelectWire } from './tdx-formula.ts'
+import type { TdxFormulaRunnerLike, TdxFormulasWire, TdxSelectWire, ZtForwardTestWire, ZtReviewWire } from './tdx-formula.ts'
+import { listReportDays, readReportDay, type ReportDayWire, type ReportDaysWire } from './local-reports.ts'
+import { reportDir } from './local-data-config.ts'
 
 /** 本桥支持的市场（与连接器服务键一一对应）。 */
 export type MarketId = 'crypto' | 'us' | 'cn' | 'hk' | 'futures' | 'global'
@@ -1642,6 +1644,46 @@ export class TradingBridge {
     }
   }
 
+  /** 按每日报告的规则复核几只股票（body: { codes, source? }）：选股页签的过滤、Z哥诊断卡。只读。 */
+  async ztReview(body: unknown): Promise<ZtReviewWire> {
+    const raw = (body ?? {}) as { codes?: unknown; source?: unknown; date?: unknown }
+    const codes = Array.isArray(raw.codes) ? raw.codes.filter((code): code is string => typeof code === 'string') : []
+    const source = typeof raw.source === 'string' ? raw.source : undefined
+    const date = typeof raw.date === 'string' ? raw.date : undefined
+    try {
+      return await this.requireTdx().review({ codes, ...(source !== undefined ? { source } : {}), ...(date !== undefined ? { date } : {}) })
+    } catch (error) {
+      if (error instanceof Error && /^invalid (codes|source|date)/.test(error.message)) throw new BridgeProtocolError(400, error.message)
+      throw error
+    }
+  }
+
+  /** 「报告」页签：已有每日报告的日期（最新在前）。 */
+  async reportDays(): Promise<ReportDaysWire> {
+    return listReportDays()
+  }
+
+  /** 「报告」页签：一天的报告数据（date 只接受 YYYY-MM-DD）。 */
+  async reportDay(date: string): Promise<ReportDayWire> {
+    try {
+      return await readReportDay(date.trim())
+    } catch (error) {
+      if (error instanceof Error && /^invalid date/.test(error.message)) throw new BridgeProtocolError(400, error.message)
+      throw error
+    }
+  }
+
+  /** 「报告」页签：前向检验（技能命令行算，随机基准按日期缓存在报告目录下）。 */
+  async ztForwardTest(): Promise<ZtForwardTestWire> {
+    return this.requireTdx().forwardTest(reportDir())
+  }
+
+  /** 图表角落的数据新鲜度：本地日线到哪天、活跃市值到哪天。只读本地文件，不接受路径参数。 */
+  async dataStatus(symbol: string): Promise<DataStatusWire> {
+    const [localThrough, amv] = await Promise.all([localDailyThrough(symbol.trim()), readLocalAmv()])
+    return { localThrough, amvThrough: amv.available && typeof amv.lastDate === 'string' ? amv.lastDate : null }
+  }
+
   private requireTdx(): TdxFormulaRunnerLike {
     const runner = this.host.tdxFormula
     if (runner === undefined) {
@@ -2788,6 +2830,13 @@ export const BRIDGE_WRITE_ROUTES: readonly BridgeWriteRoute[] = [
     handle: async ({ bridge, body }) => ({ status: 200, payload: await bridge.tdxSelect(body) }),
   },
   {
+    // 只读计算（按每日报告的规则复核几只股票），用 POST 只为带 body；不失效任何 store。
+    method: 'POST',
+    pathname: '/zt/review',
+    invalidates: [],
+    handle: async ({ bridge, body }) => ({ status: 200, payload: await bridge.ztReview(body) }),
+  },
+  {
     method: 'POST',
     pathname: '/trade/order',
     invalidates: [],
@@ -2911,6 +2960,14 @@ export async function dispatchBridgeRequest(
     switch (pathname) {
       case '/amv-regime':
         return readResult(await readLocalAmv())
+      case '/data-status':
+        return readResult(await bridge.dataStatus(search.get('symbol') ?? ''))
+      case '/reports':
+        return readResult(await bridge.reportDays())
+      case '/reports/day':
+        return readResult(await bridge.reportDay(search.get('date') ?? ''))
+      case '/zt/forward-test':
+        return readResult(await bridge.ztForwardTest())
       case '/float-history':
         return readResult(await readLocalFloatHistory(search.get('symbol') ?? ''))
       case '/markets':

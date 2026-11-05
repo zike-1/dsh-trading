@@ -5,7 +5,7 @@
 import { describe, expect, it } from 'vitest'
 import type { IPrimitivePaneRenderer, SeriesAttachedParameter, Time } from 'lightweight-charts'
 import type { IndicatorLabel, IndicatorStick } from '@dshtrading/indicators'
-import { StickLinePrimitive, labelOffsets, stickBarSpacing, stickPixelWidth, stickRect, sticksValueRange } from '../src/client/stick-line-primitive.ts'
+import { StickLinePrimitive, labelOffsets, labelPlacements, stickBarSpacing, stickPixelWidth, stickRect, sticksValueRange } from '../src/client/stick-line-primitive.ts'
 
 const brick = (index: number, from: number, to: number, extra: Partial<IndicatorStick> = {}): IndicatorStick => ({ index, from, to, width: 3, color: '#FF3D3D', ...extra })
 
@@ -179,5 +179,32 @@ describe('纵轴范围', () => {
     // Then 返回 null，有矩形时给 priceRange
     expect(primitive.autoscaleInfo(0 as never, 10 as never)).toBeNull()
     expect(primitive.autoscaleInfo(0 as never, 100 as never)).toEqual({ priceRange: { minValue: 1, maxValue: 2 } })
+  })
+})
+
+
+describe('主图标注贴着 K 线', () => {
+  const bars = [{ low: 10, high: 11 }, { low: 20, high: 22 }]
+  const anchor = (index: number) => bars[index]
+
+  it('低于最低价的贴到下方、高于最高价的贴到上方，同一侧按离 K 线远近排', () => {
+    const labels = [
+      { index: 0, price: 9.5 },   // 下方，较近
+      { index: 0, price: 9.0 },   // 下方，较远
+      { index: 0, price: 11.5 },  // 上方
+      { index: 1, price: 21 },    // 在 K 线范围内：照原价位
+      { index: 2, price: 5 },     // 没有这根 K 线：照原价位
+    ]
+    expect(labelPlacements(labels, anchor)).toEqual([
+      { side: 'below', order: 0 },
+      { side: 'below', order: 1 },
+      { side: 'above', order: 0 },
+      { side: 'free', order: 0 },
+      { side: 'free', order: 0 },
+    ])
+  })
+
+  it('副图（不传 K 线）全部照原价位画', () => {
+    expect(labelPlacements([{ index: 0, price: 1 }])).toEqual([{ side: 'free', order: 0 }])
   })
 })

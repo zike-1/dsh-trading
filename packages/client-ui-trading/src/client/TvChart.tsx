@@ -737,19 +737,24 @@ function TvChartImpl(props: TvChartProps): React.JSX.Element {
     // 自己算坐标。副图序列每次同步都是重建式（recreateAll），序列对象会换新，挂载必须
     // 跟在同一处、并在组消失时随序列撤下。
     const mounted: Array<{ series: ISeriesApi<SeriesType>; primitive: StickLinePrimitive }> = []
-    const mountShapes = (groups: readonly TvIndicatorGroup[], refs: Map<string, Map<string, ISeriesApi<SeriesType>>>): void => {
+    // 主图标注贴着 K 线画（下标与 bars 对齐）；副图没有 K 线，照原价位画
+    const barAnchor = (index: number): { low: number; high: number } | undefined => {
+      const bar = bars[index]
+      return bar === undefined ? undefined : { low: bar.low, high: bar.high }
+    }
+    const mountShapes = (groups: readonly TvIndicatorGroup[], refs: Map<string, Map<string, ISeriesApi<SeriesType>>>, anchored: boolean): void => {
       for (const group of groups) {
         for (const output of group.outputs) {
           const series = refs.get(group.key)?.get(output.key)
           if ((output.sticks === undefined && output.labels === undefined) || series === undefined) continue
-          const primitive = new StickLinePrimitive(output.sticks ?? [], dark, output.labels ?? [])
+          const primitive = new StickLinePrimitive(output.sticks ?? [], dark, output.labels ?? [], anchored ? barAnchor : undefined)
           series.attachPrimitive(primitive)
           mounted.push({ series, primitive })
         }
       }
     }
-    mountShapes(mainOverlays, mainRefs.current)
-    mountShapes(subIndicators, subRefs.current)
+    mountShapes(mainOverlays, mainRefs.current, true)
+    mountShapes(subIndicators, subRefs.current, false)
     return () => {
       // 清理顺序：本 effect 的 cleanup 先于下一次重建运行，此时旧序列仍由库持有，
       // 显式解绑可以避免 primitive 残留在一个已被 removeSeries 的序列上。
@@ -1276,11 +1281,20 @@ export function toHistogramData(output: IndicatorOutput, timeAxis: readonly UTCT
   return data
 }
 
+/**
+ * 副图纵轴顶部留白（2026-11-04）：副图左上角压着一行图例（名称 + 读数），原来和主图一样只留 8%，
+ * 曲线顶到图例下面互相重叠；留出约一行图例的高度。
+ */
+export const SUB_PANE_TOP_MARGIN = 0.22
+
 function applyStretch(chart: IChartApi): void {
   const panes = chart.panes()
   if (panes[0] !== undefined) panes[0].setStretchFactor(4)
   for (let index = 1; index < panes.length; index++) {
-    panes[index]?.setStretchFactor(1)
+    const pane = panes[index]
+    if (pane === undefined) continue
+    pane.setStretchFactor(1)
+    pane.priceScale('right').applyOptions({ scaleMargins: { top: SUB_PANE_TOP_MARGIN, bottom: AXIS_SCALE_MARGIN } })
   }
 }
 

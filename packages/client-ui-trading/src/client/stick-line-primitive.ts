@@ -30,6 +30,52 @@ const LABEL_FONT_SIZE = 11
 const LABEL_LINE_HEIGHT = 12
 /** K 线间距小于这个值时文字必然糊成一片，不画。 */
 const MIN_LABEL_BAR_SPACING = 4
+/** 贴着 K 线画时，文字离最低价 / 最高价的像素距离。 */
+const LABEL_GAP = 4
+
+/** 一根 K 线的最低、最高价（主图标注贴 K 线用）。 */
+export interface LabelAnchor {
+  low: number
+  high: number
+}
+
+/** 标注的摆放：below / above 贴着 K 线最低 / 最高价按像素往下 / 往上排；free 照原价位画。 */
+export interface LabelPlacement {
+  side: 'below' | 'above' | 'free'
+  /** 同一根同一侧的第几个（离 K 线近的在前）。 */
+  order: number
+}
+
+/**
+ * 主图标注贴着 K 线摆放（2026-11-04）。通达信公式习惯写 DRAWTEXT(条件, L*0.975, …)，按价格百分比
+ * 留空；通达信纵轴宽看着贴近，这里日线纵轴只覆盖十来个百分点，2.5% 就是五分之一个图高，文字离
+ * K 线很远。所以：价位低于这根最低价的贴到最低价下方，高于最高价的贴到最高价上方，同一根同一侧
+ * 按原价位离 K 线的远近依次排开；落在 K 线范围内的、或没有 K 线（副图）的照原价位画。
+ */
+export function labelPlacements(
+  labels: readonly Pick<IndicatorLabel, 'index' | 'price'>[],
+  anchor?: (index: number) => LabelAnchor | undefined,
+): LabelPlacement[] {
+  const sides = labels.map((label) => {
+    const bar = anchor?.(label.index)
+    if (bar === undefined || !Number.isFinite(label.price)) return { side: 'free' as const, distance: 0 }
+    if (label.price < bar.low) return { side: 'below' as const, distance: bar.low - label.price }
+    if (label.price > bar.high) return { side: 'above' as const, distance: label.price - bar.high }
+    return { side: 'free' as const, distance: 0 }
+  })
+  const groups = new Map<string, number[]>()
+  sides.forEach((entry, i) => {
+    if (entry.side === 'free') return
+    const key = `${labels[i]!.index}:${entry.side}`
+    groups.set(key, [...(groups.get(key) ?? []), i])
+  })
+  const order = new Array<number>(labels.length).fill(0)
+  for (const members of groups.values()) {
+    members.sort((a, b) => sides[a]!.distance - sides[b]!.distance || a - b)
+    members.forEach((member, rank) => { order[member] = rank })
+  }
+  return sides.map((entry, i) => ({ side: entry.side, order: order[i]! }))
+}
 
 /**
  * 同一根同一价位有多个标注时依次错开，否则文字叠在一起读不出来（通达信是直接叠的）。
@@ -103,9 +149,16 @@ export class StickLinePrimitive implements ISeriesPrimitive<Time> {
   private readonly sticks: readonly IndicatorStick[]
   private readonly views: readonly IPrimitivePaneView[]
 
-  constructor(sticks: readonly IndicatorStick[], dark: boolean, labels: readonly IndicatorLabel[] = []) {
+  constructor(
+    sticks: readonly IndicatorStick[],
+    dark: boolean,
+    labels: readonly IndicatorLabel[] = [],
+    /** 主图传入：按下标给 K 线最低 / 最高价，标注贴着 K 线画；副图不传。 */
+    anchor?: (index: number) => LabelAnchor | undefined,
+  ) {
     this.sticks = sticks
     const offsets = labelOffsets(labels)
+    const placements = labelPlacements(labels, anchor)
     const renderer: IPrimitivePaneRenderer = {
       draw: (target) => {
         const chart = this.chart
@@ -139,12 +192,25 @@ export class StickLinePrimitive implements ISeriesPrimitive<Time> {
           labels.forEach((label, order) => {
             if (range !== null && (label.index < range.from - 1 || label.index > range.to + 1)) return
             const center = logicalCoordinate(label.index)
-            const y = toCoordinate(label.price)
-            if (center === null || y === null) return
+            if (center === null) return
             const spacing = stickBarSpacing(logicalCoordinate, label.index)
             if (spacing !== null && spacing < MIN_LABEL_BAR_SPACING) return
+            const placement = placements[order]
+            const bar = placement !== undefined && placement.side !== 'free' ? anchor?.(label.index) : undefined
+            let y: number | null
+            if (placement !== undefined && bar !== undefined && placement.side === 'below') {
+              const edge = toCoordinate(bar.low)
+              y = edge === null ? null : edge + LABEL_GAP + LABEL_LINE_HEIGHT / 2 + placement.order * LABEL_LINE_HEIGHT
+            } else if (placement !== undefined && bar !== undefined && placement.side === 'above') {
+              const edge = toCoordinate(bar.high)
+              y = edge === null ? null : edge - LABEL_GAP - LABEL_LINE_HEIGHT / 2 - placement.order * LABEL_LINE_HEIGHT
+            } else {
+              const at = toCoordinate(label.price)
+              y = at === null ? null : at + (offsets[order] ?? 0)
+            }
+            if (y === null) return
             context.fillStyle = dark ? label.color : label.lightColor ?? label.color
-            context.fillText(label.text, center, y + (offsets[order] ?? 0))
+            context.fillText(label.text, center, y)
           })
           context.restore()
         })

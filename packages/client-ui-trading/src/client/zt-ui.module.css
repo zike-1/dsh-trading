@@ -1,0 +1,402 @@
+/* zettaranc 卡片视觉（2026-11-04）：Z哥诊断浮层与「报告」页签共用。
+ * 沿用每日 HTML 报告的视觉：圆角卡片、柔和阴影、胶囊标签、多空徽章、砖块方块、数字统计块；
+ * 颜色吃工作台主题变量（红涨绿跌），深色主题自动跟随。 */
+
+.card {
+  background: var(--dsw-futu-bg-base, #fff);
+  border: 1px solid var(--dsw-futu-border-default, #e5e6eb);
+  border-radius: 12px;
+  box-shadow: var(--dsw-futu-shadow-sm, 0 1px 2px rgba(0, 0, 0, 0.04), 0 2px 8px rgba(0, 0, 0, 0.04));
+  padding: 10px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+}
+
+.clickable {
+  cursor: pointer;
+  transition: border-color 0.12s ease;
+}
+
+.clickable:hover {
+  border-color: var(--dsw-futu-accent-border, rgba(37, 99, 235, 0.45));
+}
+
+.cards {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+/* —— 股票卡片头：名称 代码 | 收盘 涨跌 —— */
+.stockHead {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 8px;
+  min-width: 0;
+}
+
+.stockName {
+  font-size: 14px;
+  font-weight: 650;
+  color: var(--dsw-futu-text-primary, #1d2129);
+}
+
+.code {
+  margin-left: 6px;
+  font-size: 11px;
+  color: var(--dsw-futu-text-muted, #86909c);
+  font-variant-numeric: tabular-nums;
+}
+
+.px {
+  font-size: 13px;
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+  color: var(--dsw-futu-text-primary, #1d2129);
+}
+
+.up {
+  color: var(--dsw-futu-up, #e8384f);
+}
+
+.down {
+  color: var(--dsw-futu-down, #1aa260);
+}
+
+.muted {
+  color: var(--dsw-futu-text-muted, #86909c);
+}
+
+/* —— 砖块 —— */
+.bricks {
+  display: flex;
+  align-items: center;
+  gap: 3px;
+  font-size: 12px;
+  color: var(--dsw-futu-text-secondary, #5f6672);
+}
+
+.brick {
+  width: 12px;
+  height: 9px;
+  border-radius: 2px;
+}
+
+.brickRed {
+  background: var(--dsw-futu-up, #e8384f);
+}
+
+.brickGreen {
+  background: var(--dsw-futu-down, #1aa260);
+}
+
+.bricks span {
+  margin-left: 6px;
+}
+
+/* —— 键值行 —— */
+.rows {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 12.5px;
+}
+
+.row {
+  display: flex;
+  gap: 8px;
+  align-items: baseline;
+  min-width: 0;
+}
+
+.k {
+  flex: 0 0 52px;
+  color: var(--dsw-futu-text-muted, #86909c);
+}
+
+.v {
+  min-width: 0;
+  color: var(--dsw-futu-text-primary, #1d2129);
+  overflow-wrap: anywhere;
+}
+
+/* —— 胶囊标签 —— */
+.tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+}
+
+.tag {
+  font-size: 11.5px;
+  line-height: 1.6;
+  padding: 1px 8px;
+  border-radius: 999px;
+  background: var(--dsw-futu-bg-subtle, #f2f3f5);
+  color: var(--dsw-futu-text-primary, #1d2129);
+  white-space: nowrap;
+}
+
+.tagSrc {
+  background: var(--dsw-futu-accent-subtle, #ebf1fd);
+  color: var(--dsw-futu-accent, #3b6fe0);
+}
+
+.tagBuy {
+  background: color-mix(in srgb, var(--dsw-futu-up, #e8384f) 12%, transparent);
+  color: var(--dsw-futu-up, #e8384f);
+}
+
+.tagSell {
+  background: color-mix(in srgb, var(--dsw-futu-down, #1aa260) 12%, transparent);
+  color: var(--dsw-futu-down, #1aa260);
+}
+
+.tagWarn {
+  background: color-mix(in srgb, var(--dsw-futu-warn, #d97706) 14%, transparent);
+  color: var(--dsw-futu-warn, #d97706);
+}
+
+/* —— 多空徽章 —— */
+.state {
+  display: inline-block;
+  font-size: 20px;
+  font-weight: 700;
+  padding: 0 12px;
+  border-radius: 10px;
+  line-height: 1.5;
+}
+
+.stateBull {
+  color: var(--dsw-futu-up, #e8384f);
+  background: color-mix(in srgb, var(--dsw-futu-up, #e8384f) 12%, transparent);
+}
+
+.stateBear {
+  color: var(--dsw-futu-down, #1aa260);
+  background: color-mix(in srgb, var(--dsw-futu-down, #1aa260) 12%, transparent);
+}
+
+.sparkline {
+  display: block;
+  width: 100%;
+  height: 48px;
+}
+
+/* —— 小节 —— */
+.sectionTitle {
+  margin: 12px 0 2px;
+  font-size: 14px;
+  font-weight: 650;
+  color: var(--dsw-futu-text-primary, #1d2129);
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+}
+
+.count {
+  font-size: 12px;
+  font-weight: 400;
+  color: var(--dsw-futu-text-muted, #86909c);
+}
+
+.lead {
+  margin: 0 0 6px;
+  font-size: 11.5px;
+  line-height: 1.5;
+  color: var(--dsw-futu-text-muted, #86909c);
+}
+
+.note {
+  border-radius: 8px;
+  padding: 6px 10px;
+  font-size: 12px;
+  background: color-mix(in srgb, var(--dsw-futu-warn, #d97706) 12%, transparent);
+  color: var(--dsw-futu-warn, #d97706);
+}
+
+.empty {
+  padding: 14px 8px;
+  text-align: center;
+  font-size: 12.5px;
+  color: var(--dsw-futu-text-muted, #86909c);
+}
+
+.footnote {
+  margin-top: 12px;
+  font-size: 11px;
+  line-height: 1.7;
+  color: var(--dsw-futu-text-muted, #86909c);
+}
+
+/* —— 数字统计块 —— */
+.stats {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.stat {
+  min-width: 0;
+}
+
+.statLabel {
+  font-size: 11px;
+  color: var(--dsw-futu-text-muted, #86909c);
+}
+
+.statValue {
+  font-size: 17px;
+  font-weight: 650;
+  font-variant-numeric: tabular-nums;
+  color: var(--dsw-futu-text-primary, #1d2129);
+}
+
+.statHint {
+  font-size: 10.5px;
+  color: var(--dsw-futu-text-muted, #86909c);
+  font-variant-numeric: tabular-nums;
+}
+
+/* —— 精简表格 —— */
+.table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 11.5px;
+  font-variant-numeric: tabular-nums;
+}
+
+.table th,
+.table td {
+  padding: 4px 4px;
+  border-bottom: 1px solid var(--dsw-futu-border-subtle, #f0f2f5);
+  text-align: right;
+  white-space: nowrap;
+}
+
+.table th:first-child,
+.table td:first-child {
+  text-align: left;
+}
+
+.table thead th {
+  font-weight: 500;
+  color: var(--dsw-futu-text-muted, #86909c);
+}
+
+.listRow {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  padding: 5px 2px;
+  border-bottom: 1px solid var(--dsw-futu-border-subtle, #f0f2f5);
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.listRow:hover {
+  background: var(--dsw-futu-bg-surface-hover, rgba(0, 0, 0, 0.03));
+}
+
+.listReason {
+  margin-left: auto;
+  color: var(--dsw-futu-text-secondary, #5f6672);
+  text-align: right;
+  overflow-wrap: anywhere;
+}
+
+/* —— Z哥诊断浮窗：默认在窗口右上方（右侧栏旁），不压 K 线；拖标题栏可移动，双击复位 —— */
+.floating {
+  position: fixed;
+  top: 64px;
+  right: calc(var(--dshtrading-sidebar-w, 44px) + 16px);
+  z-index: 60;
+  width: min(340px, calc(100vw - 32px));
+  max-height: calc(100vh - 96px);
+  overflow: auto;
+  box-shadow: var(--dsw-futu-shadow-lg, 0 8px 24px rgba(0, 0, 0, 0.12));
+}
+
+.floatHead {
+  cursor: move;
+  user-select: none;
+  touch-action: none;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11.5px;
+  color: var(--dsw-futu-text-muted, #86909c);
+}
+
+.spacer {
+  flex: 1;
+}
+
+.iconBtn {
+  appearance: none;
+  border: none;
+  background: transparent;
+  color: var(--dsw-futu-text-secondary, #5f6672);
+  font-size: 15px;
+  line-height: 1;
+  width: 22px;
+  height: 22px;
+  border-radius: 6px;
+  cursor: pointer;
+}
+
+.iconBtn:hover {
+  background: var(--dsw-futu-bg-surface-active, rgba(0, 0, 0, 0.06));
+}
+
+.actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 2px;
+}
+
+.btn,
+.btnPrimary {
+  appearance: none;
+  height: 26px;
+  padding: 0 10px;
+  border-radius: 6px;
+  font-size: 12px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.btn {
+  border: 1px solid var(--dsw-futu-border-default, #e5e6eb);
+  background: transparent;
+  color: var(--dsw-futu-text-primary, #1d2129);
+}
+
+.btnPrimary {
+  border: 1px solid var(--dsw-futu-accent, #3b6fe0);
+  background: var(--dsw-futu-accent, #3b6fe0);
+  color: #fff;
+  font-weight: 600;
+}
+
+.btn:disabled,
+.btnPrimary:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.fine {
+  margin-left: auto;
+  font-size: 10.5px;
+  color: var(--dsw-futu-text-muted, #86909c);
+}
+
+.freshness {
+  margin-right: 12px;
+  font-size: 11px;
+  color: var(--dsw-futu-text-muted, #86909c);
+}

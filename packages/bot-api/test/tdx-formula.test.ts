@@ -4,7 +4,7 @@
  */
 import { describe, expect, it, vi } from 'vitest'
 import { TradingBridge, createBridgeHost, dispatchBridgeRequest } from '../src/bridge.ts'
-import { createZtTdxRunner, lastJsonLine, selectArgs, type ExecLike, type TdxFormulaRunnerLike } from '../src/tdx-formula.ts'
+import { createZtTdxRunner, lastJsonLine, reviewArgs, selectArgs, type ExecLike, type TdxFormulaRunnerLike } from '../src/tdx-formula.ts'
 
 vi.stubGlobal('fetch', vi.fn(async () => {
   throw new Error('tdx-formula.test must not hit network')
@@ -70,6 +70,40 @@ describe('zettaranc 命令行封装', () => {
   })
 })
 
+describe('复核（按每日报告的规则）', () => {
+  it('参数：只收 A 股代码、去重、截断；公式名不能像命令行开关', () => {
+    expect(reviewArgs({ codes: ['600795.sh', ' 002541', '600795.SH', 'AAPL', '--x'], source: '我的B1' }))
+      .toEqual(['review', '--codes', '600795.SH,002541', '--source', '我的B1'])
+    expect(() => reviewArgs({ codes: ['AAPL'] })).toThrow(/invalid codes/)
+    expect(reviewArgs({ codes: ['00700.hk', '0700.HK'] })).toEqual(['review', '--codes', '00700.HK'])
+    expect(() => reviewArgs({ codes: ['600795'], source: '--help' })).toThrow(/invalid source/)
+    expect(reviewArgs({ codes: ['600795.SH'], date: '20261104' })).toEqual(['review', '--codes', '600795.SH', '--date', '20261104'])
+    expect(() => reviewArgs({ codes: ['600795.SH'], date: '2026-11-04' })).toThrow(/invalid date/)
+    expect(reviewArgs({ codes: Array.from({ length: 200 }, (_, i) => String(600000 + i)) })[2]!.split(',')).toHaveLength(120)
+  })
+
+  it('映射留下 / 剔除、理由、视图与活跃市值；技能报错 → available:false', async () => {
+    let fail = false
+    const exec: ExecLike = async () => fail ? '{"ok": false, "error": "boom"}' : JSON.stringify({
+      ok: true, overlay_date: '20261104', amv: { date: '2026-11-04', state: 'BEAR' },
+      items: [
+        { code: '600795', name: '国电电力', kept: true, reason: '', reasons: ['我的B1选出', 'B1买点 J=-3'], view: { as_of: '20261104', brick: '第1块红砖' } },
+        { code: '002541', name: '鸿路钢构', kept: false, reason: '近5日S1', reasons: [], view: null },
+      ],
+    })
+    const runner = createZtTdxRunner({ skillDir: 'C:/skill', exec })
+    expect(await runner.review({ codes: ['600795.SH', '002541.SZ'], source: '我的B1' })).toEqual({
+      ok: true, available: true, overlayDate: '20261104', amv: { date: '2026-11-04', state: 'BEAR' },
+      items: [
+        { code: '600795', name: '国电电力', kept: true, reason: '', reasons: ['我的B1选出', 'B1买点 J=-3'], view: { as_of: '20261104', brick: '第1块红砖' }, market: 'A', notes: [], status: 'kept' },
+        { code: '002541', name: '鸿路钢构', kept: false, reason: '近5日S1', reasons: [], view: {}, market: 'A', notes: [], status: 'dropped' },
+      ],
+    })
+    fail = true
+    expect(await runner.review({ codes: ['600795'] })).toEqual({ ok: true, available: false, reason: 'boom' })
+  })
+})
+
 describe('桥路由 /tdx/*', () => {
   const runner: TdxFormulaRunnerLike = {
     listFormulas: async () => ({ ok: true, available: true, formulas: [{ code: '我的B1', name: '我的B1' }] }),
@@ -77,7 +111,34 @@ describe('桥路由 /tdx/*', () => {
       ok: true, available: true, formula: request.formula, tradeDate: '20261103', boards: [...(request.boards ?? [])],
       scanned: 1, totalHits: 1, picks: [{ code: '600795.SH', name: '国电电力' }],
     }),
+    review: async request => ({
+      ok: true, available: true, overlayDate: '', amv: null,
+      items: request.codes.map(code => ({ code: code.slice(0, 6), name: '', kept: true, reason: '', reasons: [request.source ?? ''], view: {}, market: 'A', notes: [], status: 'kept' as const })),
+    }),
+    forwardTest: async dir => ({ ok: true, available: true, result: { report_days: 1, dir: dir ?? null } }),
   }
+
+  it('GET /zt/forward-test 透传技能结果；技能报错 → available:false', async () => {
+    const bridge = new TradingBridge(createBridgeHost({ legacy: () => undefined, tdxFormula: runner }))
+    const res = await dispatchBridgeRequest(bridge, 'GET', '/zt/forward-test', new URLSearchParams())
+    expect(res.payload).toMatchObject({ available: true, result: { report_days: 1 } })
+    const calls: string[][] = []
+    const real = createZtTdxRunner({ skillDir: 'C:/skill', exec: async (_f, args) => { calls.push([...args]); return '{"ok": false, "error": "no reports"}' } })
+    expect(await real.forwardTest('D:/reports')).toEqual({ ok: true, available: false, reason: 'no reports' })
+    expect(calls[0]).toEqual(['-m', 'modules.cli', 'forward-test', '--out', 'D:/reports'])
+  })
+
+  it('POST /zt/review 透传、不失效任何 store；代码不合法 → 400', async () => {
+    const bridge = new TradingBridge(createBridgeHost({ legacy: () => undefined, tdxFormula: runner }))
+    const res = await dispatchBridgeRequest(bridge, 'POST', '/zt/review', new URLSearchParams(), { codes: ['600795.SH'], source: '我的B1' })
+    expect(res.payload).toMatchObject({ available: true, items: [{ code: '600795', reasons: ['我的B1'] }] })
+    expect('invalidates' in res ? res.invalidates : null).toEqual([])
+    const strict = new TradingBridge(createBridgeHost({
+      legacy: () => undefined,
+      tdxFormula: { ...runner, review: createZtTdxRunner({ skillDir: 'C:/skill', exec: async () => '{}' }).review },
+    }))
+    await expect(dispatchBridgeRequest(strict, 'POST', '/zt/review', new URLSearchParams(), { codes: ['AAPL'] })).rejects.toMatchObject({ status: 400 })
+  })
 
   it('GET /tdx/formulas 与 POST /tdx/select 透传，选股不失效任何 store', async () => {
     const bridge = new TradingBridge(createBridgeHost({ legacy: () => undefined, tdxFormula: runner }))

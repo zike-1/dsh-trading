@@ -16,6 +16,9 @@ const net = vi.hoisted(() => ({
   created: [] as string[],
   members: [] as Array<[string, string]>,
   lastSelectArgs: null as unknown,
+  review: null as unknown,
+  lastReviewArgs: null as unknown,
+  reviewCalls: [] as number[],
 }))
 
 vi.mock('../src/client/api.ts', async (importOriginal) => {
@@ -24,6 +27,7 @@ vi.mock('../src/client/api.ts', async (importOriginal) => {
     ...actual,
     fetchTdxFormulas: async () => net.formulas as never,
     runTdxSelect: async (formula: string, boards: readonly string[]) => { net.lastSelectArgs = [formula, boards]; return net.select as never },
+    runZtReview: async (codes: readonly string[], source?: string, date?: string) => { net.reviewCalls.push(codes.length); net.lastReviewArgs = [codes, source, date]; return net.review as never },
     putHostSelection: async (instrument: unknown) => { net.selections.push(instrument); return true },
     createHostWatchlistGroup: async (name: string) => {
       if (net.groups.some(group => group.name === name)) return { ok: false, reason: 'duplicate' }
@@ -37,7 +41,7 @@ vi.mock('../src/client/api.ts', async (importOriginal) => {
   }
 })
 
-import { TdxScreenerPanel, formatTradeDate } from '../src/client/TdxScreenerPanel.tsx'
+import { TdxScreenerPanel, formatTradeDate, reviewedPicks } from '../src/client/TdxScreenerPanel.tsx'
 
 /** key 直出翻译，参数拼在后面便于断言。 */
 const t = (key: MarketLocaleKey, params?: Record<string, unknown>): string =>
@@ -52,6 +56,9 @@ describe('TdxScreenerPanel', () => {
     net.created = []
     net.members = []
     net.lastSelectArgs = null
+    net.review = null
+    net.lastReviewArgs = null
+    net.reviewCalls = []
   })
   afterEach(() => cleanup())
 
@@ -100,6 +107,68 @@ describe('TdxScreenerPanel', () => {
     await waitFor(() => { expect(screen.queryByText(/screener\.saved/)).not.toBeNull() })
     expect(net.created).toEqual([])
     expect(net.members).toEqual([['g9', '002181.SZ'], ['g9', '600557.SH']])
+  })
+
+  it('技能复核：留下的排前面并写理由，剔除的写原因；存分组只存留下的', async () => {
+    net.formulas = { available: true, formulas: [{ code: '我的B1', name: '我的B1' }] }
+    net.select = { available: true, formula: '我的B1', tradeDate: '20261104', scanned: 3000, totalHits: 2, picks: [{ code: '002181.SZ', name: '粤传媒' }, { code: '600557.SH', name: '康缘药业' }] }
+    net.review = {
+      available: true, amv: null,
+      items: [
+        { code: '002181', name: '粤传媒', kept: false, reason: '近5日S1', reasons: [], view: { as_of: '20261104' } },
+        { code: '600557', name: '康缘药业', kept: true, reason: '', reasons: ['我的B1选出', '第1块红砖'], view: { as_of: '20261104' } },
+      ],
+    }
+    render(<TdxScreenerPanel t={t} onClose={() => {}} />)
+    await waitFor(() => { expect((screen.getByRole('button', { name: 'screener.run' }) as HTMLButtonElement).disabled).toBe(false) })
+    fireEvent.click(screen.getByRole('button', { name: 'screener.run' }))
+    await waitFor(() => { expect(screen.queryByText('我的B1选出 · 第1块红砖')).not.toBeNull() })
+    expect(net.lastReviewArgs).toEqual([['002181.SZ', '600557.SH'], '我的B1', '20261104'])
+    expect(screen.queryByText('近5日S1')).not.toBeNull()
+    expect(screen.queryByText(/screener\.reviewSummary .*"kept":1,"dropped":1,"pending":0,"asOf":"2026-11-04"/)).not.toBeNull()
+    const names = screen.getAllByRole('button').map(button => button.textContent ?? '').filter(text => text.includes('粤传媒') || text.includes('康缘药业'))
+    expect(names[0]).toContain('康缘药业')
+    fireEvent.click(screen.getByRole('button', { name: /screener\.saveKept/ }))
+    await waitFor(() => { expect(screen.queryByText(/screener\.saved/)).not.toBeNull() })
+    expect(net.members.map(([, symbol]) => symbol)).toEqual(['600557.SH'])
+  })
+
+  it('超过 120 只分批复核；待复核的不算剔除，存分组时保留', async () => {
+    const picks = Array.from({ length: 121 }, (_, i) => ({ code: `${600000 + i}.SH`, name: `S${i}` }))
+    net.formulas = { available: true, formulas: [{ code: 'X', name: 'X' }] }
+    net.select = { available: true, formula: 'X', tradeDate: '20261104', scanned: 3000, totalHits: 121, picks }
+    net.review = {
+      available: true, amv: null,
+      items: picks.map((pick, i) => ({ code: pick.code, name: pick.name, kept: i === 0, status: i === 0 ? 'kept' : 'stale', reason: i === 0 ? '' : '待复核', reasons: [], view: {} })),
+    }
+    render(<TdxScreenerPanel t={t} onClose={() => {}} />)
+    await waitFor(() => { expect((screen.getByRole('button', { name: 'screener.run' }) as HTMLButtonElement).disabled).toBe(false) })
+    fireEvent.click(screen.getByRole('button', { name: 'screener.run' }))
+    await waitFor(() => { expect(screen.queryByText(/screener\.reviewSummary/)).not.toBeNull() })
+    expect(net.reviewCalls).toEqual([120, 1])
+    expect(screen.queryByText(/"kept":1,"dropped":0,"pending":120/)).not.toBeNull()
+    fireEvent.click(screen.getByRole('button', { name: /screener\.saveKept/ }))
+    await waitFor(() => { expect(screen.queryByText(/screener\.saved/)).not.toBeNull() })
+    expect(net.members).toHaveLength(121)
+  })
+
+  it('技能不可用：照常列出通达信结果并说明原因', async () => {
+    net.formulas = { available: true, formulas: [{ code: 'X', name: 'X' }] }
+    net.select = { available: true, formula: 'X', tradeDate: '20261104', scanned: 1, totalHits: 1, picks: [{ code: '002181.SZ', name: '粤传媒' }] }
+    net.review = { available: false, reason: 'python not found' }
+    render(<TdxScreenerPanel t={t} onClose={() => {}} />)
+    await waitFor(() => { expect((screen.getByRole('button', { name: 'screener.run' }) as HTMLButtonElement).disabled).toBe(false) })
+    fireEvent.click(screen.getByRole('button', { name: 'screener.run' }))
+    await waitFor(() => { expect(screen.queryByText(/screener\.reviewUnavailable/)).not.toBeNull() })
+    expect(screen.queryByText('粤传媒')).not.toBeNull()
+    expect(screen.queryByRole('button', { name: 'screener.saveGroup' })).not.toBeNull()
+  })
+
+  it('reviewedPicks：没复核时原样；复核覆盖不到的排在后面', () => {
+    const picks = [{ code: '000001.SZ', name: 'A' }, { code: '600000.SH', name: 'B' }]
+    expect(reviewedPicks(picks, null)).toEqual([{ pick: picks[0] }, { pick: picks[1] }])
+    const review = { available: true as const, amv: null, items: [{ code: '600000', name: 'B', kept: true, reason: '', reasons: [], view: {} }] }
+    expect(reviewedPicks(picks, review).map(row => row.pick.name)).toEqual(['B', 'A'])
   })
 
   it('交易日格式化', () => {

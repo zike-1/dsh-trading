@@ -308,6 +308,18 @@ const CASES: readonly WriteCase[] = [
     },
   },
   {
+    name: 'POST /zt/review 按每日报告的规则复核（只读计算）',
+    method: 'POST',
+    pathname: '/zt/review',
+    store: null,
+    run: async (call) => {
+      refusedProtocol(await call('POST', '/zt/review', {}), /invalid codes/)
+      // 测试宿主的 DSH home 下没有 zettaranc 技能：不可用 + 原因，也不失效任何 store
+      okWrite(await call('POST', '/zt/review', { codes: ['600795.SH'] }), { available: false })
+      return 0
+    },
+  },
+  {
     name: 'POST /trade/order 报单',
     method: 'POST',
     pathname: '/trade/order',

@@ -479,6 +479,188 @@ export type ClientTdxSelect =
   | { available: true; formula: string; tradeDate: string; scanned: number; totalHits: number; picks: ClientTdxPick[] }
   | { available: false; reason: string }
 
+/** 技能单只视图（zettaranc StockView 的子集；砖块、B1、卖出信号、黄白线、BOLL 等）。 */
+export interface ClientZtStockView {
+  as_of?: string
+  /** 技能分析失败的原因（缺 K 线、除权文件读不了等）；有它时其余字段都是默认值，不能当结论看。 */
+  error?: string
+  industry?: string
+  brick?: string
+  /** RED / GREEN（砖块方块的颜色）。 */
+  brick_trend?: string
+  red_bricks?: number
+  sells_today?: string[]
+  brick_action?: string
+  b1_today?: string
+  b1_text?: string
+  b1_streak?: number
+  add_verdict?: string
+  flyaway?: string
+  sells?: string[]
+  boll_day?: string
+  boll_week?: string
+  macd_veto?: boolean
+  close?: number
+  pct_chg?: number
+  line?: string
+}
+
+export interface ClientZtReviewItem {
+  /** 6 位代码。 */
+  code: string
+  name: string
+  /** 按每日报告的选股规则：true = 留下。 */
+  kept: boolean
+  /** 剔除原因（留下时为空）。 */
+  reason: string
+  /** 买入理由（剔除时为空）。 */
+  reasons: string[]
+  view: ClientZtStockView
+  /** A / HK；港股只作参考。 */
+  market?: string
+  /** 港股的参考说明（规则按 A 股、未复权等）。 */
+  notes?: string[]
+  /** kept 留下 / dropped 剔除 / stale 待复核（本地数据早于选股日）。缺省按 kept 推断。 */
+  status?: 'kept' | 'dropped' | 'stale'
+}
+
+export interface ClientZtAmv {
+  date?: string
+  /** BULL / BEAR。 */
+  state?: string
+  since?: string
+  days_in_state?: number
+}
+
+/** 技能不在 / 报错时 available:false + 原因。 */
+export type ClientZtReview =
+  | { available: true; items: ClientZtReviewItem[]; amv: ClientZtAmv | null }
+  | { available: false; reason: string }
+
+/** 按每日报告的规则复核几只股票（桥 POST /zt/review）：选股页签的过滤、Z哥诊断卡。请求失败 → null。 */
+export async function runZtReview(codes: readonly string[], source?: string, date?: string): Promise<ClientZtReview | null> {
+  try {
+    const response = await fetch('/dshtrading/api/zt/review', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        codes,
+        ...(source !== undefined && source !== '' ? { source } : {}),
+        ...(date !== undefined && /^\d{8}$/.test(date) ? { date } : {}),
+      }),
+    })
+    if (!response.ok) return null
+    const wire = await response.json() as { ok?: boolean; available?: boolean; reason?: string; items?: ClientZtReviewItem[]; amv?: ClientZtAmv | null }
+    if (wire.ok !== true) return null
+    if (wire.available !== true) return { available: false, reason: wire.reason ?? '' }
+    return { available: true, items: Array.isArray(wire.items) ? wire.items : [], amv: wire.amv ?? null }
+  } catch {
+    return null
+  }
+}
+
+/* ------------------------------------------------------------------ */
+/* 每日报告与前向检验（2026-11-04）：「报告」页签                          */
+/* ------------------------------------------------------------------ */
+
+export type ClientReportDays = { available: true; days: string[] } | { available: false; reason: string }
+
+/** 每日报告（zettaranc 技能 data/YYYY-MM-DD.json，字段见 daily_selection_report.collect_report）。 */
+export interface ClientReport {
+  date?: string
+  data_date?: string
+  generated_at?: string
+  behind_days?: number | null
+  amv?: {
+    date?: string; state?: string; since?: string; days_in_state?: number; pct_chg?: number; bull_at?: number | null; bear_at?: number | null
+    series?: Array<{ date: string; close: number; state?: string }>
+  } | null
+  amv_behind?: boolean
+  holdings?: Array<ClientZtStockView & { code: string; name?: string; sells_today?: string[] }>
+  picks?: Array<ClientZtStockView & { code: string; name?: string; sources?: string[]; reasons?: string[] }>
+  dropped?: Array<{ code: string; name?: string; sources?: string[]; reason?: string }>
+  dividend?: { total?: number; failed?: number; b1?: Array<ClientZtStockView & { code: string; name?: string }> } | null
+  follow_up?: { summary?: Record<string, { count?: number; avg?: number; win_rate?: number; avg_excess?: number }> }
+  rules?: { exclude?: string; add?: string; amv?: string }
+}
+
+export type ClientReportDay = { available: true; date: string; report: ClientReport } | { available: false; reason: string }
+
+export interface ClientForwardGroup {
+  days: number
+  count: number
+  avg: number | null
+  win_rate: number | null
+  beat_random_rate: number | null
+  excess_vs_random: number | null
+  excess_ci: [number, number] | null
+}
+
+/** 前向检验（技能 modules/forward_test.py 的输出）。 */
+export interface ClientForwardTest {
+  horizons?: number[]
+  local_through?: string
+  report_days?: number
+  pending_days?: number
+  summary?: Record<string, { picks: ClientForwardGroup; dropped: ClientForwardGroup; verdict?: string; bench_avg?: number | null; random_avg?: number | null }>
+  by_source?: Record<string, Record<string, ClientForwardGroup>>
+  days?: Array<{ date: string; picks: number; dropped: number; universe: Record<string, number | null>; bench: Record<string, number | null>; picks_avg: Record<string, number | null>; dropped_avg: Record<string, number | null> }>
+  notes?: string[]
+}
+
+export type ClientForwardTestResult = { available: true; result: ClientForwardTest } | { available: false; reason: string }
+
+/** 已有报告的日期（桥 GET /reports，最新在前）。请求失败 → null。 */
+export async function fetchReportDays(signal?: AbortSignal): Promise<ClientReportDays | null> {
+  try {
+    const wire = await getJson<{ available?: boolean; days?: string[]; reason?: string }>('/dshtrading/api/reports', signal)
+    if (wire.available !== true) return { available: false, reason: wire.reason ?? '' }
+    return { available: true, days: Array.isArray(wire.days) ? wire.days : [] }
+  } catch {
+    return null
+  }
+}
+
+/** 一天的报告（桥 GET /reports/day）。请求失败 → null。 */
+export async function fetchReportDay(date: string, signal?: AbortSignal): Promise<ClientReportDay | null> {
+  try {
+    const wire = await getJson<{ available?: boolean; date?: string; report?: ClientReport; reason?: string }>(
+      `/dshtrading/api/reports/day?${new URLSearchParams({ date }).toString()}`, signal)
+    if (wire.available !== true || wire.report === undefined) return { available: false, reason: wire.reason ?? '' }
+    return { available: true, date: wire.date ?? date, report: wire.report }
+  } catch {
+    return null
+  }
+}
+
+/** 前向检验（桥 GET /zt/forward-test，技能命令行算）。请求失败 → null。 */
+export async function fetchForwardTest(signal?: AbortSignal): Promise<ClientForwardTestResult | null> {
+  try {
+    const wire = await getJson<{ available?: boolean; result?: ClientForwardTest; reason?: string }>('/dshtrading/api/zt/forward-test', signal)
+    if (wire.available !== true || wire.result === undefined) return { available: false, reason: wire.reason ?? '' }
+    return { available: true, result: wire.result }
+  } catch {
+    return null
+  }
+}
+
+/** 图表下方的数据新鲜度（桥 GET /data-status）：日期都是 YYYY-MM-DD，没有 = null。 */
+export interface ClientDataStatus {
+  localThrough: string | null
+  amvThrough: string | null
+}
+
+/** 本地日线、活跃市值各到哪天。请求失败 → null（不显示这一行）。 */
+export async function fetchDataStatus(symbol: string, signal?: AbortSignal): Promise<ClientDataStatus | null> {
+  try {
+    const wire = await getJson<{ localThrough?: unknown; amvThrough?: unknown }>(`/dshtrading/api/data-status?${new URLSearchParams({ symbol }).toString()}`, signal)
+    const text = (value: unknown): string | null => (typeof value === 'string' && value !== '' ? value : null)
+    return { localThrough: text(wire.localThrough), amvThrough: text(wire.amvThrough) }
+  } catch {
+    return null
+  }
+}
+
 /** 通达信自定义选股公式列表（桥 /tdx/formulas）。请求失败 → null。 */
 export async function fetchTdxFormulas(signal?: AbortSignal): Promise<ClientTdxFormulas | null> {
   try {

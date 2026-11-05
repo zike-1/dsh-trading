@@ -12,11 +12,13 @@ import { dshHomeDir } from '@dshtrading/dsh-home'
  *   { "tdxDir": "D:/new_tdx64", "zhinanzhenDataDir": "D:/Program Files/WavMain/ANALYSE/Data/ChinaStk" }
  *
  * - tdxDir：通达信安装目录（含 vipdoc、T0002）；
- * - zhinanzhenDataDir：指南针的 ANALYSE/Data/ChinaStk 目录（含 Z_SK/day.vdat，活跃市值 0AMV）。
+ * - zhinanzhenDataDir：指南针的 ANALYSE/Data/ChinaStk 目录（含 Z_SK/day.vdat，活跃市值 0AMV）；
+ * - reportDir：zettaranc 每日报告目录（技能 .env 的 REPORT_OUT_DIR，含 data/YYYY-MM-DD.json），「报告」页签读它。
  */
 export interface LocalDataConfig {
   tdxDir?: string
   zhinanzhenDataDir?: string
+  reportDir?: string
 }
 
 let cache: { file: string; mtimeMs: number; config: LocalDataConfig } | undefined
@@ -40,6 +42,7 @@ export function readLocalDataConfig(file: string = localDataConfigFile()): Local
     config = {
       ...(typeof raw.tdxDir === 'string' && raw.tdxDir.trim() ? { tdxDir: raw.tdxDir.trim() } : {}),
       ...(typeof raw.zhinanzhenDataDir === 'string' && raw.zhinanzhenDataDir.trim() ? { zhinanzhenDataDir: raw.zhinanzhenDataDir.trim() } : {}),
+      ...(typeof raw.reportDir === 'string' && raw.reportDir.trim() ? { reportDir: raw.reportDir.trim() } : {}),
     }
   } catch {
     config = {}
@@ -63,6 +66,11 @@ export function tdxGbbqFile(): string | undefined {
 export function amvFile(): string | undefined {
   const dir = readLocalDataConfig().zhinanzhenDataDir
   return process.env.DSH_TRADING_AMV_FILE ?? (dir === undefined ? undefined : path.join(dir, 'Z_SK', 'day.vdat'))
+}
+
+/** zettaranc 每日报告目录：DSH_TRADING_REPORT_DIR > local-data.json reportDir。 */
+export function reportDir(): string | undefined {
+  return process.env.DSH_TRADING_REPORT_DIR ?? readLocalDataConfig().reportDir
 }
 
 /** 活跃市值用的交易日历（上证指数日线）。 */
