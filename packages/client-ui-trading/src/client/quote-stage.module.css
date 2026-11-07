@@ -92,11 +92,13 @@
 }
 
 /* 行情板块页签（图表 | 基本面）：随报价头同行，同花顺式下划线激活态 */
+/* 2026-11-05：页签钉在报价行右端（margin-left: auto），切换名称长短不同的股票时位置不动 */
 .stageTabs {
   display: flex;
   align-items: baseline;
   gap: 4px;
-  margin-left: 2px;
+  margin-left: auto;
+  flex: none;
   padding-left: 12px;
   border-left: 1px solid var(--dsw-futu-border-default, #e3e6ea);
 }
@@ -845,4 +847,48 @@
 
 .ratioLegendNote {
   color: var(--dsw-futu-text-muted, #8e95a3);
+}
+
+/* 2026-11-05：行情信息行右侧（数据新鲜度 + 更新时间）可收缩——窄屏（右侧页签打开）时新鲜度省略号截断，
+   整行不再折成两行；更新时间不收缩。 */
+.metaShrink {
+  flex: 1 1 0;
+  min-width: 0;
+  justify-content: flex-end;
+  white-space: nowrap;
+  overflow: hidden;
+}
+
+.metaShrink > span:last-child {
+  flex: none;
+}
+
+/* 右轴（区间涨幅）说明：钉在主图右上角、右轴正上方 */
+.axisCaption {
+  position: absolute;
+  top: 2px;
+  right: 4px;
+  z-index: 3;
+  font-size: 10px;
+  line-height: 1;
+  color: var(--dsw-futu-text-muted, #8e95a3);
+  cursor: help;
+  pointer-events: auto;
+  user-select: none;
+}
+
+/* 主图图例：线型小样 + 只读读数（评分）另起一段 */
+.legendSwatch {
+  display: inline-block;
+  vertical-align: middle;
+  margin-right: 4px;
+}
+
+.legendSep {
+  display: inline-block;
+  width: 1px;
+  height: 10px;
+  margin: 0 2px;
+  background: var(--dsw-futu-border-default, #e3e6ea);
+  vertical-align: middle;
 }

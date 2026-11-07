@@ -26,6 +26,8 @@ import type {
 } from 'lightweight-charts'
 import type { BarPrice, PriceFormatCustom } from 'lightweight-charts'
 import { fmtAxis, priceDigits } from './format.ts'
+import { isConstantOutput, shortTitle } from './indicator-readout.ts'
+import { fmtCompact } from './format.ts'
 import { AXIS_FONT_FAMILY, AXIS_FONT_SIZE, AXIS_SCALE_MARGIN, axisMinimumWidth, percentLabel, percentLabelCandidates } from './axis-width.ts'
 import { getColorPalette, type ColorMode } from './color-mode.ts'
 import { resolveHistogramBarColor, resolveOutputColor } from './indicator-color.ts'
@@ -129,6 +131,10 @@ export interface TvChartProps {
   onMarkerHover?: (info: MarkerHoverInfo | null) => void
   /** 信号标记图上的短文案（买入/卖出，词典驱动）。 */
   markerTexts?: { entry: string; exit: string } | undefined
+  /** 右轴（区间涨幅%）说明：text 写在右上角，hint 悬停看比较基准。 */
+  axisCaption?: { text: string; hint: string } | undefined
+  /** 主图信号悬停清单的标题（如「这天的信号」）。 */
+  signalListTitle?: string | undefined
   liveText?: string | undefined
   /**
    * 右键某根 K 线（KDAS 关键日菜单入口）：index = 命中柱逻辑下标，x/y = 容器坐标。
@@ -187,6 +193,26 @@ export function subIndicatorPaneIndex(groupIndex: number): number {
  * 参考价从 refPriceRef 惰性读取（滚动/缩放时经 applyOptions 换新对象强制重绘）。
  * 负数带负号、正数不带正号（同花顺式）。
  */
+/** 主图某根 K 线上的全部信号标注（按指标顺序）；悬停清单用。 */
+export function signalsAt(groups: readonly TvIndicatorGroup[], index: number): Array<{ text: string; color: string }> {
+  const dark = isDarkTheme()
+  const out: Array<{ text: string; color: string }> = []
+  for (const group of groups) {
+    for (const output of group.outputs) {
+      for (const label of output.labels ?? []) {
+        if (label.index === index) out.push({ text: label.text, color: dark ? label.color : label.lightColor ?? label.color })
+      }
+    }
+  }
+  return out
+}
+
+/** K 线时间（秒）→ YYYY-MM-DD（按 UTC 存的日线时间）。 */
+function fmtBarDate(time: number | undefined): string {
+  if (time === undefined) return ''
+  return new Date(time * 1000).toISOString().slice(0, 10)
+}
+
 function mirrorPercentFormat(refPriceRef: { current: number | null }): PriceFormatCustom {
   return {
     type: 'custom',
@@ -366,6 +392,8 @@ function TvChartImpl(props: TvChartProps): React.JSX.Element {
   const subRefs = useRef(new Map<string, Map<string, ISeriesApi<SeriesType>>>())
   /** 各 pane 顶缘 y 坐标（legend overlay 定位用）；空数组 = 尚未测量。 */
   const [paneTops, setPaneTops] = useState<number[]>([])
+  /** 主图悬停清单：这根 K 线的全部信号（只在两个及以上时显示）。 */
+  const [signalHover, setSignalHover] = useState<{ index: number; x: number; y: number; signals: Array<{ text: string; color: string }> } | null>(null)
   /** 最新 props 快照，供只跑一次的 chart 工厂与事件回调读取。 */
   const propsRef = useRef(props)
   propsRef.current = props
@@ -474,6 +502,14 @@ function TvChartImpl(props: TvChartProps): React.JSX.Element {
       }
       propsRef.current.onHoverIndex(param.logical)
       propsRef.current.onMarkerHover?.(hitTestMarker(param, propsRef, chart, candles, container, markerMetaRef))
+      // 主图一根 K 线上有两个及以上信号（图上只画主标记 +N）：悬停列出这天的全部信号
+      const index = Math.round(Number(param.logical))
+      const signals = param.paneIndex === undefined || param.paneIndex === 0 ? signalsAt(propsRef.current.mainOverlays, index) : []
+      setSignalHover((current) => {
+        if (signals.length < 2 || param.point === undefined) return current === null ? current : null
+        if (current !== null && current.index === index) return current
+        return { index, x: param.point.x, y: param.point.y, signals }
+      })
     }
     chart.subscribeCrosshairMove(onCrosshair)
 
@@ -714,13 +750,8 @@ function TvChartImpl(props: TvChartProps): React.JSX.Element {
         chart.applyOptions({ rightPriceScale: { minimumWidth: minWidth } })
       }
     }
-    // 徽标底色跟随最新一根K线方向（与左轴价格徽标同款着色逻辑）。
-    const last = bars[bars.length - 1]
-    const prev = bars[bars.length - 2]
-    if (last !== undefined && prev !== undefined) {
-      const palette = getColorPalette(propsRef.current.colorMode)
-      badge.applyOptions({ priceLineColor: last.close >= prev.close ? palette.upColor : palette.downColor })
-    }
+    // 右轴是「相对可视区最左一根收盘」的区间涨幅，不是当天涨跌：徽标用中性灰，免得和当日红绿混淆（2026-11-05）
+    badge.applyOptions({ priceLineColor: isDarkTheme() ? '#6b7280' : '#8a909b' })
   }, [bars, mainOverlays, props.colorMode])
 
   // ---- 指标序列：结构 diff + 数据同步 ----
@@ -967,6 +998,44 @@ function TvChartImpl(props: TvChartProps): React.JSX.Element {
       onPointerCancel={handleRangePointerCancel}
       onContextMenu={handleContextMenu}
     >
+      {props.axisCaption !== undefined && (
+        <span
+          title={props.axisCaption.hint}
+          style={{ position: 'absolute', top: 15, right: 4, zIndex: 3, fontSize: 10, lineHeight: 1, color: 'var(--dsw-futu-text-muted, #8e95a3)', cursor: 'help', userSelect: 'none' }}
+          data-dshtrading-axis-caption=""
+        >
+          {props.axisCaption.text}
+        </span>
+      )}
+      {signalHover !== null && (
+        <div
+          role="tooltip"
+          data-dshtrading-signal-list=""
+          style={{
+            position: 'absolute',
+            left: Math.max(4, signalHover.x + 14),
+            top: Math.max(4, signalHover.y - 8),
+            zIndex: 4,
+            pointerEvents: 'none',
+            padding: '5px 8px',
+            borderRadius: 6,
+            fontSize: 11.5,
+            lineHeight: 1.5,
+            background: dark ? 'rgba(30, 34, 45, 0.96)' : 'rgba(255, 255, 255, 0.97)',
+            border: `1px solid ${dark ? '#363a45' : '#e3e6ea'}`,
+            boxShadow: '0 4px 14px rgba(0, 0, 0, 0.12)',
+            color: dark ? '#d1d4dc' : '#1a1e24',
+            whiteSpace: 'nowrap',
+          }}
+        >
+          <div style={{ color: dark ? '#8e95a3' : '#5f6672', marginBottom: 2 }}>
+            {props.signalListTitle ?? 'Signals'} · {fmtBarDate(bars[signalHover.index]?.time)}
+          </div>
+          {signalHover.signals.map((signal, i) => (
+            <span key={i} style={{ color: signal.color, fontWeight: 600, marginRight: 8 }}>{signal.text}</span>
+          ))}
+        </div>
+      )}
       {/* 框选高亮带（拖拽中 / 已提交选区） */}
       {selectionRect !== null && (
         <div
@@ -1011,7 +1080,7 @@ function TvChartImpl(props: TvChartProps): React.JSX.Element {
         if (isPlaceholderGroup(group)) {
           return (
             <div key={group.key} style={{ position: 'absolute', left: 8, top: top + 4, zIndex: 2, pointerEvents: 'none', fontSize: 10.5, fontFamily: monoFont, display: 'flex', gap: 8 }}>
-              <IndicatorPaneTitle title={group.title} />
+              <IndicatorPaneTitle title={group.title === undefined ? undefined : shortTitle(group.title)} />
               <span style={{ color: 'var(--dsw-futu-text-tertiary, #8a919c)', fontWeight: 500 }}>{group.emptyNotice}</span>
             </div>
           )
@@ -1019,13 +1088,14 @@ function TvChartImpl(props: TvChartProps): React.JSX.Element {
         if (readoutIndex === null) return null
         return (
           <div key={group.key} style={{ position: 'absolute', left: 8, top: top + 4, zIndex: 2, pointerEvents: 'none', fontSize: 10.5, fontFamily: monoFont, display: 'flex', gap: 8 }}>
-            <IndicatorPaneTitle title={group.title} live={group.live} liveText={props.liveText} />
+            <IndicatorPaneTitle title={group.title === undefined ? undefined : shortTitle(group.title)} live={group.live} liveText={props.liveText} />
             {group.outputs.map((output) => {
               const value = output.values[readoutIndex]
-              if (output.noLegend === true || value === undefined || !Number.isFinite(value)) return null
+              // 固定参考线（整段同一个数）的读数恒定，不写；成交量这类大数写成「902.95万」
+              if (output.noLegend === true || value === undefined || !Number.isFinite(value) || isConstantOutput(output)) return null
               return (
                 <span key={output.key} style={{ color: resolveOutputColor(output, dark), fontWeight: 500 }}>
-                  {output.key}: {value.toFixed(output.precision ?? 2)}
+                  {output.key}: {Math.abs(value) >= 1e5 ? fmtCompact(value) : value.toFixed(output.precision ?? 2)}
                 </span>
               )
             })}

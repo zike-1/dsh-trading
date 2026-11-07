@@ -37,6 +37,9 @@ export function amvBandRect(band: AmvBand, coordinate: (index: number) => number
   return right > left ? { left, right } : null
 }
 
+/** 顶部多空色带的高度（像素）。 */
+export const AMV_STRIP_HEIGHT = 13
+
 /** 原生 pane primitive：由图表自身在缩放、平移、resize 后重新绘制；不参与价格轴。 */
 export class AmvBackground implements ISeriesPrimitive<Time> {
   private readonly view: IPrimitivePaneView
@@ -46,23 +49,26 @@ export class AmvBackground implements ISeriesPrimitive<Time> {
       draw: target => {
         target.useMediaCoordinateSpace(({ context, mediaSize }) => {
           context.save()
-          context.font = '11px sans-serif'
+          context.font = '10px sans-serif'
           for (const band of bands) {
             const rect = amvBandRect(band, index => chart.timeScale().logicalToCoordinate(index as Logical), mediaSize.width)
             if (rect === null) continue
             const bull = band.interval.state === 'bull'
-            context.fillStyle = bull ? 'rgba(230,69,69,0.12)' : 'rgba(86,190,135,0.13)'
+            // 2026-11-05：多空主要看顶部窄色带；整段背景降到很淡，只作复盘时的区段提示，让 K 线和信号更突出
+            context.fillStyle = bull ? 'rgba(230,69,69,0.055)' : 'rgba(86,190,135,0.06)'
             context.fillRect(rect.left, 0, rect.right - rect.left, mediaSize.height)
-            const word = bull ? labels.bull : labels.bear
-            const label = `${word} ${band.interval.start} ~ ${band.interval.end}`
-            // 窄区间保留多空字，完整日期通过顶栏和宽区间显示，避免跨区间压字。
-            const text = context.measureText(label).width + 8 <= rect.right - rect.left ? label : (rect.right - rect.left >= 16 ? word : '')
+            context.fillStyle = bull ? 'rgba(230,69,69,0.32)' : 'rgba(86,190,135,0.36)'
+            context.fillRect(rect.left, 0, rect.right - rect.left, AMV_STRIP_HEIGHT)
+            // 只写一个多 / 空字（2026-11-05 精简）：日期范围压在 K 线顶部，和「顶」等标注挤在一起；
+            // 区间颜色本身已经说明多空，太窄的区间连字也不写。
+            const text = rect.right - rect.left >= 16 ? (bull ? labels.bull : labels.bear) : ''
             context.save()
             context.beginPath()
             context.rect(rect.left, 0, rect.right - rect.left, mediaSize.height)
             context.clip()
-            context.fillStyle = bull ? (dark ? '#ff9898' : '#b92f3c') : (dark ? '#91dfb3' : '#22724b')
-            context.fillText(text, rect.left + 4, 17)
+            context.fillStyle = bull ? (dark ? '#ffd0d0' : '#9b1f2b') : (dark ? '#c9f0da' : '#185c3a')
+            context.textBaseline = 'middle'
+            context.fillText(text, rect.left + 4, AMV_STRIP_HEIGHT / 2 + 0.5)
             context.restore()
           }
           context.restore()

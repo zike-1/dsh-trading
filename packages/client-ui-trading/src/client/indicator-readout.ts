@@ -33,8 +33,12 @@ export interface IndicatorReadoutGroup {
 export interface ReadoutItem {
   /** React list key：`${group.key}.${output.key}`。 */
   key: string
-  /** 指标显示名。 */
+  /** 指标显示名（已去掉末尾参数括号）。 */
   title: string
+  /** 图例小样：画出来的线（颜色同 color）；只显示读数、不画线的（如评分）为 null。 */
+  swatch: { style: 'solid' | 'dotted' | 'circles'; width: number } | null
+  /** 是否在这项前面写指标名：只在每组第一项、且读数行里不止一组时写（一组时名字是噪音）。 */
+  showTitle: boolean
   /** 分量名（output.key，如 KDAS_26-09-05）。 */
   label: string
   /** 读数文本；该根无值 = '—'。 */
@@ -57,6 +61,34 @@ function valueColumnWidth(output: IndicatorOutput): number {
   return width
 }
 
+/** 指标名去掉末尾的参数括号：「Z单针(3,21)」→「Z单针」；参数在指标面板里看。 */
+export function shortTitle(title: string): string {
+  return title.replace(/\s*[(\uFF08][^()\uFF08\uFF09]*[)\uFF09]\s*$/, '') || title
+}
+
+const constantCache = new WeakMap<readonly (number | undefined)[], boolean>()
+
+/**
+ * 整段都是同一个数的分量（如 Z单针 的 85 / 30 参考线）：读数恒定，写进读数行只是噪音。
+ * 至少两个有效值且全部相等才算；按 values 数组缓存。
+ */
+export function isConstantOutput(output: Pick<IndicatorOutput, 'values'>): boolean {
+  const cached = constantCache.get(output.values)
+  if (cached !== undefined) return cached
+  let first: number | undefined
+  let count = 0
+  let constant = true
+  for (const value of output.values) {
+    if (value === undefined || !Number.isFinite(value)) continue
+    count += 1
+    if (first === undefined) first = value
+    else if (value !== first) { constant = false; break }
+  }
+  const result = constant && count >= 2
+  constantCache.set(output.values, result)
+  return result
+}
+
 /**
  * 读数项：readoutIndex 为空（序列未就绪）时整行为空；否则按组、按 output 顺序
  * 恒定产出等量项目——无值项以 '—' 占位。组序与 output 序即渲染顺序。
@@ -64,19 +96,25 @@ function valueColumnWidth(output: IndicatorOutput): number {
 export function readoutItems(groups: readonly IndicatorReadoutGroup[], readoutIndex: number | null): ReadoutItem[] {
   if (readoutIndex === null) return []
   const items: ReadoutItem[] = []
+  const shown = (output: IndicatorOutput): boolean => output.noLegend !== true && !isConstantOutput(output)
+  const multipleGroups = groups.filter(group => group.outputs.some(shown)).length > 1
   for (const group of groups) {
+    let first = true
     for (const output of group.outputs) {
-      if (output.noLegend === true) continue
+      if (!shown(output)) continue
       const value = output.values[readoutIndex]
       const precision = output.precision ?? 2
       items.push({
         key: `${group.key}.${output.key}`,
-        title: group.title,
+        title: shortTitle(group.title),
+        showTitle: multipleGroups && first,
+        swatch: output.noDraw === true || output.kind !== 'line' ? null : { style: output.lineStyle ?? 'solid', width: output.lineWidth ?? 1 },
         label: output.key,
         text: value === undefined || !Number.isFinite(value) ? MISSING : value.toFixed(precision),
         color: output.color,
         width: valueColumnWidth(output),
       })
+      first = false
     }
   }
   return items

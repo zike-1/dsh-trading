@@ -573,7 +573,7 @@ export interface ClientReport {
   behind_days?: number | null
   amv?: {
     date?: string; state?: string; since?: string; days_in_state?: number; pct_chg?: number; bull_at?: number | null; bear_at?: number | null
-    series?: Array<{ date: string; close: number; state?: string }>
+    series?: Array<{ date: string; close: number; open?: number; high?: number; low?: number; state?: string }>
   } | null
   amv_behind?: boolean
   holdings?: Array<ClientZtStockView & { code: string; name?: string; sells_today?: string[] }>

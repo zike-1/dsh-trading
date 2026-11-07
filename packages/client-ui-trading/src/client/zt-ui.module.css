@@ -397,6 +397,96 @@
 
 .freshness {
   margin-right: 12px;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
   font-size: 11px;
+  color: var(--dsw-futu-text-muted, #86909c);
+}
+
+/* —— 报告持仓：每只一行，点开看细节 —— */
+.compact {
+  border-bottom: 1px solid var(--dsw-futu-border-subtle, #f0f2f5);
+}
+
+.compact:last-child {
+  border-bottom: none;
+}
+
+.compact[open] {
+  padding-bottom: 6px;
+}
+
+.compactRow {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 0;
+  font-size: 12.5px;
+  cursor: pointer;
+  list-style: none;
+}
+
+.compactRow::-webkit-details-marker {
+  display: none;
+}
+
+.compactName {
+  appearance: none;
+  border: none;
+  background: transparent;
+  padding: 0;
+  font-size: 13px;
+  font-weight: 650;
+  color: var(--dsw-futu-text-primary, #1d2129);
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.compactName:hover {
+  color: var(--dsw-futu-accent, #3b6fe0);
+}
+
+.compactBrick {
+  font-size: 11.5px;
+  color: var(--dsw-futu-text-secondary, #5f6672);
+  white-space: nowrap;
+}
+
+.compactTag {
+  margin-left: auto;
+  min-width: 0;
+  overflow: hidden;
+}
+
+.freshnessIcon {
+  display: inline-flex;
+  align-items: center;
+  margin-right: 6px;
+  color: var(--dsw-futu-text-muted, #86909c);
+  cursor: help;
+  flex: none;
+}
+
+.freshnessIcon:hover {
+  color: var(--dsw-futu-text-primary, #1d2129);
+}
+
+/* 活跃市值日 K 线 */
+.kline {
+  display: block;
+  width: 100%;
+  height: 96px;
+  margin-top: 8px;
+  border-radius: 4px;
+}
+
+.klineAxis {
+  display: flex;
+  justify-content: space-between;
+  gap: 6px;
+  margin-top: 2px;
+  font-size: 10.5px;
   color: var(--dsw-futu-text-muted, #86909c);
 }

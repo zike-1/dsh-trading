@@ -26,7 +26,7 @@ import {
   type ClientReportDays,
 } from './api.ts'
 import type { MarketLocaleKey } from './contract.ts'
-import { Bricks, Sparkline, StockHead, isoDate, pct, reasonTagClass, signClass } from './ZtUi.tsx'
+import { AmvKline, Bricks, StockHead, addWeekdays, hasOhlc, formatPrice, isoDate, pct, reasonTagClass, signClass } from './ZtUi.tsx'
 import shared from './tdx-screener-panel.module.css'
 import ui from './zt-ui.module.css'
 
@@ -76,7 +76,16 @@ function AmvCard({ t, amv, behind }: { t: ReportTranslate; amv: ClientReport['am
         {amv.bull_at !== null && amv.bull_at !== undefined ? <div>{t('report.toBull')} <b className={ui.up}>≥ {pct(amv.bull_at)}</b></div> : null}
         {amv.bear_at !== null && amv.bear_at !== undefined ? <div>{t('report.toBear')} <b className={ui.down}>≤ {pct(amv.bear_at)}</b></div> : null}
       </div>
-      {amv.series !== undefined ? <Sparkline points={amv.series} /> : null}
+      {amv.series !== undefined && amv.series.length >= 2 ? (
+        <>
+          <AmvKline points={amv.series} />
+          <div className={ui.klineAxis}>
+            <span>{amv.series[0]!.date}</span>
+            <span>{t(hasOhlc(amv.series) ? 'report.amvKlineNote' : 'report.amvLineNote', { n: amv.series.length })}</span>
+            <span>{amv.series[amv.series.length - 1]!.date}</span>
+          </div>
+        </>
+      ) : null}
       {behind ? <div className={ui.note}>{t('report.amvBehind')}</div> : null}
       <div className={ui.lead}>{t('report.amvLead')}</div>
     </div>
@@ -98,22 +107,33 @@ export function ReportView({ t, report }: { t: ReportTranslate; report: ClientRe
 
       <Section title={t('report.holdingsTitle')} count={t('report.countStocks', { count: holdings.length })} lead={t('report.holdingsLead')}>
         {holdings.length === 0 ? <div className={ui.empty}>{t('report.empty')}</div> : (
-          <div className={ui.cards}>
+          <div className={ui.card} style={{ padding: '2px 10px' }}>
             {holdings.map((item) => {
               const today = item.sells_today ?? []
               const earlier = (item.sells ?? []).filter(sell => !today.includes(sell))
               // 分析失败：只写原因，不显示价格和结论（默认值 0 价、无信号不是真的「没有卖出信号」）
               if (item.error) {
                 return (
-                  <div key={item.code} className={`${ui.card} ${ui.clickable}`} role="button" tabIndex={0} onClick={() => { open(item.code, item.name) }}>
-                    <StockHead name={item.name ?? ''} code={item.code} />
-                    <div className={ui.note}>{t('report.analyzeFailed', { reason: item.error })}</div>
+                  <div key={item.code} className={ui.compactRow}>
+                    <button type="button" className={ui.compactName} onClick={() => { open(item.code, item.name) }}>{item.name || item.code}</button>
+                    <span className={ui.listReason}>{t('report.analyzeFailed', { reason: item.error })}</span>
                   </div>
                 )
               }
+              // 每只一行：名称（点了切图）、价格涨跌、砖块、今天最要紧的一个标签；点开这一行看加仓 / 放飞 / 卖出 / BOLL
+              const headline = today.length > 0
+                ? <span className={`${ui.tag} ${ui.tagSell}`}>{today.join(' · ')}</span>
+                : item.add_verdict
+                  ? <span className={`${ui.tag} ${ui.tagBuy}`}>{item.add_verdict}</span>
+                  : item.flyaway ? <span className={`${ui.tag} ${ui.tagWarn}`}>{item.flyaway}</span> : null
               return (
-                <div key={item.code} className={`${ui.card} ${ui.clickable}`} role="button" tabIndex={0} onClick={() => { open(item.code, item.name) }}>
-                  <StockHead name={item.name ?? ''} code={item.code} close={item.close} pctChg={item.pct_chg} />
+                <details key={item.code} className={ui.compact}>
+                  <summary className={ui.compactRow}>
+                    <button type="button" className={ui.compactName} onClick={(event) => { event.preventDefault(); open(item.code, item.name) }}>{item.name || item.code}</button>
+                    <span className={ui.px}>{item.close !== undefined ? formatPrice(item.close) : '—'} <span className={signClass(item.pct_chg)}>{pct(item.pct_chg)}</span></span>
+                    <span className={ui.compactBrick}>{item.brick ?? ''}</span>
+                    <span className={ui.compactTag}>{headline}</span>
+                  </summary>
                   <Bricks view={item} />
                   <div className={ui.rows}>
                     <div className={ui.row}><span className={ui.k}>{t('zt.label.add')}</span><span className={ui.v}>{item.add_verdict ? <span className={`${ui.tag} ${ui.tagBuy}`}>{item.add_verdict}</span> : <span className={ui.muted}>{t('report.noAdd')}</span>}</span></div>
@@ -128,7 +148,7 @@ export function ReportView({ t, report }: { t: ReportTranslate; report: ClientRe
                     </div>
                     <div className={ui.row}><span className={ui.k}>BOLL</span><span className={`${ui.v} ${ui.muted}`}>{t('zt.bollValue', { day: item.boll_day ?? '—', week: item.boll_week ?? '—' })}</span></div>
                   </div>
-                </div>
+                </details>
               )
             })}
           </div>
@@ -223,6 +243,21 @@ function GroupRow({ label, group }: { label: string; group: ClientForwardGroup }
 export function ForwardView({ t, data }: { t: ReportTranslate; data: ClientForwardTest }) {
   const horizons = data.horizons ?? []
   const first = horizons[0]
+  const finished = Object.values(data.summary ?? {}).some(row => row.picks.days > 0)
+  const earliest = (data.days ?? []).map(day => day.date).sort()[0]
+  if (!finished) {
+    return (
+      <>
+        <p className={ui.lead}>{t('forward.meta', { days: data.report_days ?? 0, pending: data.pending_days ?? 0, through: isoDate(data.local_through) })}</p>
+        <div className={`${ui.card} ${ui.empty}`}>
+          {earliest !== undefined
+            ? t('forward.waiting', { reports: data.report_days ?? 0, first: isoDate(earliest), ready: addWeekdays(earliest, 5) })
+            : t('forward.noReports')}
+        </div>
+        <div className={ui.footnote}>{(data.notes ?? []).map(note => <div key={note}>{note}</div>)}</div>
+      </>
+    )
+  }
   return (
     <>
       <p className={ui.lead}>{t('forward.meta', { days: data.report_days ?? 0, pending: data.pending_days ?? 0, through: isoDate(data.local_through) })}</p>

@@ -4,7 +4,7 @@
  * 容器跳变（2026-09-15 牧原股份 6 条 KDAS 闪烁晃动 bug 的根因）。
  */
 import { describe, expect, it } from 'vitest'
-import { readoutItems } from '../src/client/indicator-readout.ts'
+import { isConstantOutput, readoutItems, shortTitle } from '../src/client/indicator-readout.ts'
 import type { IndicatorOutput } from '@dshtrading/indicators'
 
 function output(key: string, values: ReadonlyArray<number | undefined>, precision?: number): IndicatorOutput {
@@ -40,7 +40,7 @@ describe('readoutItems', () => {
   it('全序列无值时值列宽度回落到占位宽度（1ch），仍恒定产出', () => {
     const empty = { key: 'x', title: 'X', outputs: [output('X1', [undefined, undefined], 3)] }
     expect(readoutItems([empty], 0)).toEqual([
-      { key: 'x.X1', title: 'X', label: 'X1', text: '—', color: '#FFD700', width: 1 },
+      { key: 'x.X1', title: 'X', showTitle: false, swatch: { style: 'solid', width: 1 }, label: 'X1', text: '—', color: '#FFD700', width: 1 },
     ])
   })
 
@@ -68,5 +68,27 @@ describe('readoutItems', () => {
     expect(items.map(item => item.key)).toEqual(['kdas.KDAS_24-09-24', 'kdas.KDAS_26-09-05', 'ma.MA5'])
     expect(items[0]).toMatchObject({ title: 'KDAS', label: 'KDAS_24-09-24', color: '#FFD700' })
     expect(items[2]).toMatchObject({ title: 'MA', label: 'MA5', text: '12.00' })
+  })
+})
+
+
+describe('读数行精简（2026-11-05）', () => {
+  const line = (key: string, values: Array<number | undefined>) => ({ key, kind: 'line' as const, color: '#000', values })
+
+  it('只有一组时不写指标名，多组时每组第一项写一次（去掉参数括号）', () => {
+    const one = readoutItems([{ key: 's', title: '三线合一', outputs: [line('BBI', [1, 2]), line('白线', [3, 4])] }], 1)
+    expect(one.map(item => item.showTitle)).toEqual([false, false])
+    const two = readoutItems([
+      { key: 'ma', title: 'MA(5,10)', outputs: [line('MA5', [1, 2]), line('MA10', [1, 3])] },
+      { key: 's', title: '三线合一', outputs: [line('BBI', [1, 2])] },
+    ], 1)
+    expect(two.map(item => [item.showTitle, item.title])).toEqual([[true, 'MA'], [false, 'MA'], [true, '三线合一']])
+  })
+
+  it('整段同一个数的参考线不进读数行', () => {
+    const items = readoutItems([{ key: 'z', title: 'Z单针(3,21)', outputs: [line('短期', [10, 20]), line('85', [85, 85, 85])] }], 1)
+    expect(items.map(item => item.label)).toEqual(['短期'])
+    expect(isConstantOutput(line('x', [5]))).toBe(false)
+    expect(shortTitle('ZXB1金砖(14,28,57,114)')).toBe('ZXB1金砖')
   })
 })

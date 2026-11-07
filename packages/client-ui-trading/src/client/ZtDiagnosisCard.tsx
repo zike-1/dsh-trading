@@ -77,6 +77,13 @@ export function diagnosisPrompt(t: ZtTranslate, item: ClientZtReviewItem, amv: C
   return t('zt.prompt', { name: item.name || item.code, code: item.code, card: lines.join('\n') })
 }
 
+/** 诊断用的是本地日线最后一根：不是今天的就写明「MM-DD 收盘」，免得和顶部的实时价对不上。 */
+export function closeNote(t: ZtTranslate, asOf: string | undefined, now: Date = new Date()): string | undefined {
+  const today = `${now.getFullYear()}${String(now.getMonth() + 1).padStart(2, '0')}${String(now.getDate()).padStart(2, '0')}`
+  if (asOf === undefined || !/^\d{8}$/.test(asOf) || asOf === today) return undefined
+  return t('zt.closeOf', { date: `${asOf.slice(4, 6)}-${asOf.slice(6)}` })
+}
+
 /** 剪贴板接口被拒（权限策略、内嵌浏览器）时的退路：选中一个看不见的文本框再执行复制。 */
 export function legacyCopy(text: string): boolean {
   const area = document.createElement('textarea')
@@ -106,6 +113,21 @@ const reviewCache = new Map<string, { result: ClientZtReview; at: number }>()
 /** 测试用：清空缓存。 */
 export function clearZtReviewCache(): void {
   reviewCache.clear()
+}
+
+/** 收盘后数据（盘后下载、补当天 K 线）一般在这之后才齐。 */
+const AFTER_CLOSE_MINUTES = 15 * 60 + 30
+
+/**
+ * 缓存的诊断还能不能用：同一个自然日、且没有跨过收盘（15:30 之前算的，到了 15:30 之后要按收盘数据重算）。
+ * 否则早上打开看到的还是昨天收盘算的结论，晚上看到的还是盘中算的。
+ */
+export function cacheStillFresh(computedAt: number, now: number = Date.now()): boolean {
+  const a = new Date(computedAt)
+  const b = new Date(now)
+  if (a.toDateString() !== b.toDateString()) return false
+  const minutes = (d: Date): number => d.getHours() * 60 + d.getMinutes()
+  return !(minutes(a) < AFTER_CLOSE_MINUTES && minutes(b) >= AFTER_CLOSE_MINUTES)
 }
 
 interface Pos { x: number; y: number }
@@ -189,7 +211,8 @@ export function ZtDiagnosisCard({ t, symbol, name, onClose }: ZtDiagnosisCardPro
     const key = symbol.toUpperCase()
     const force = forceRef.current
     forceRef.current = false
-    const cached = force ? undefined : reviewCache.get(key)
+    const hit = force ? undefined : reviewCache.get(key)
+    const cached = hit !== undefined && cacheStillFresh(hit.at) ? hit : undefined
     if (cached !== undefined) {
       setState(cached.result)
       setComputedAt(cached.at)
@@ -249,7 +272,7 @@ export function ZtDiagnosisCard({ t, symbol, name, onClose }: ZtDiagnosisCardPro
 
       {item !== undefined && view !== undefined ? (
         <>
-          <StockHead name={item.name} code={item.code} close={view.close} pctChg={view.pct_chg} />
+          <StockHead name={item.name} code={item.code} close={view.close} pctChg={view.pct_chg} priceNote={closeNote(t, view.as_of)} />
           <div className={ui.tags}>
             {item.kept
               ? <span className={`${ui.tag} ${ui.tagBuy}`}>{t('zt.kept')}</span>
@@ -340,5 +363,15 @@ export function DataFreshness({ t, symbol, lastBarDate }: DataFreshnessProps) {
   if (status === null) return null
   const parts = [freshnessText(t, status.localThrough, lastBarDate)]
   if (status.amvThrough !== null) parts.push(t('fresh.amv', { date: status.amvThrough }))
-  return <span role="status" className={ui.freshness} data-dshtrading-freshness="">{parts.join(' · ')}</span>
+  const text = parts.join(' · ')
+  // 2026-11-05：外层只留更新时间，数据来源收进这个小图标（悬停 / 读屏看全文）
+  return (
+    <span role="status" className={ui.freshnessIcon} title={text} aria-label={text} data-dshtrading-freshness="">
+      <svg width="12" height="12" viewBox="0 0 16 16" aria-hidden="true">
+        <circle cx="8" cy="8" r="6.5" fill="none" stroke="currentColor" strokeWidth="1.3" />
+        <rect x="7.3" y="7" width="1.4" height="4.6" rx="0.5" fill="currentColor" />
+        <circle cx="8" cy="4.9" r="0.9" fill="currentColor" />
+      </svg>
+    </span>
+  )
 }

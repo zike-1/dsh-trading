@@ -419,9 +419,10 @@
   background: var(--dsw-futu-bg-surface-hover, rgba(0, 0, 0, 0.035));
 }
 
+/* 选中态（2026-11-05）：浅蓝灰底 + 左侧蓝色细线，和行内红涨绿跌分开，不再用偏红的底和红线 */
 .row[data-selected='true'] {
-  background: var(--dsw-futu-bg-selected, rgba(230, 69, 69, 0.05));
-  border-left: 2px solid var(--dsw-futu-up, #e64545);
+  background: color-mix(in srgb, var(--dsw-futu-accent, #3b6fe0) 9%, transparent);
+  box-shadow: inset 2px 0 0 var(--dsw-futu-accent, #3b6fe0);
 }
 
 .idents {
@@ -432,7 +433,7 @@
 }
 
 .name {
-  font-weight: 600;
+  font-weight: 500;
   font-size: 12.5px;
   color: var(--dsw-futu-text-primary, #1a1e24);
   white-space: nowrap;
@@ -448,7 +449,7 @@
 
 .code {
   font-size: 10.5px;
-  color: var(--dsw-futu-text-muted, #8e95a3);
+  color: var(--dsw-futu-text-secondary, #5f6672);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -493,17 +494,22 @@
   gap: 1px;
 }
 
+/* 报价数字：等宽数字（tabular-nums + 等宽数字字体回落），右对齐成列；价格半粗、涨跌幅小一号 */
 .price {
   font-size: 13px;
-  font-weight: 700;
+  font-weight: 600;
   font-variant-numeric: tabular-nums;
+  font-feature-settings: 'tnum';
+  font-family: var(--dsw-futu-font-num, 'DIN Alternate', 'Roboto Mono', ui-monospace, 'SF Mono', Consolas, sans-serif);
   line-height: 1.15;
 }
 
 .pct {
-  font-size: 11px;
+  font-size: 10.5px;
   font-weight: 500;
   font-variant-numeric: tabular-nums;
+  font-feature-settings: 'tnum';
+  font-family: var(--dsw-futu-font-num, 'DIN Alternate', 'Roboto Mono', ui-monospace, 'SF Mono', Consolas, sans-serif);
   line-height: 1.1;
 }
 

@@ -208,3 +208,50 @@ describe('主图标注贴着 K 线', () => {
     expect(labelPlacements([{ index: 0, price: 1 }])).toEqual([{ side: 'free', order: 0 }])
   })
 })
+
+
+describe('主图标注避让（2026-11-05）', () => {
+  it('同一根同一侧只画最要紧的一个，写 +N；不同日期不合并', async () => {
+    const { anchoredLabelGroups } = await import('../src/client/stick-line-primitive.ts')
+    const labels = [
+      { index: 5, text: '滴' }, { index: 5, text: 'B1' }, { index: 5, text: '▲' }, { index: 6, text: 'B1' },
+    ]
+    const placements = [
+      { side: 'below' as const, order: 1 }, { side: 'below' as const, order: 0 }, { side: 'below' as const, order: 2 },
+      { side: 'below' as const, order: 0 },
+    ]
+    const groups = anchoredLabelGroups(labels, placements)
+    expect(groups.map(g => [g.index, g.text])).toEqual([[5, 'B1+2'], [6, 'B1']])
+  })
+
+  it('相邻 K 线的标注水平重叠时往外挪一层，不重叠的留在第 0 层', async () => {
+    const { layoutLanes, LANE_HEIGHT } = await import('../src/client/stick-line-primitive.ts')
+    const lanes = layoutLanes([
+      { x: 100, edgeY: 200, width: 20, side: 'below' },
+      { x: 106, edgeY: 200, width: 20, side: 'below' },
+      { x: 160, edgeY: 200, width: 20, side: 'below' },
+      { x: 106, edgeY: 50, width: 20, side: 'above' },
+    ], 4)
+    expect(lanes.map(l => l.lane)).toEqual([0, 1, 0, 0])
+    expect(lanes[1]!.y - lanes[0]!.y).toBe(LANE_HEIGHT)
+    expect(lanes[3]!.y).toBeLessThan(50)
+  })
+})
+
+describe('主图悬停清单（2026-11-05）', () => {
+  it('列出这根 K 线上所有指标的全部信号，别的日期不算', async () => {
+    const { signalsAt } = await import('../src/client/TvChart.tsx')
+    const groups = [{
+      key: 's', title: 'S', outputs: [{
+        key: 'y', kind: 'line' as const, color: '#000', values: [],
+        labels: [
+          { index: 3, price: 1, text: 'B1', color: '#ff0', lightColor: '#b58900' },
+          { index: 3, price: 1, text: '滴', color: '#f00' },
+          { index: 4, price: 1, text: 'B1', color: '#ff0' },
+        ],
+      }],
+    }]
+    expect(signalsAt(groups as never, 3).map(s => s.text)).toEqual(['B1', '滴'])
+    expect(signalsAt(groups as never, 5)).toEqual([])
+  })
+})

@@ -23,7 +23,8 @@ vi.mock('../src/client/api.ts', async (importOriginal) => {
   }
 })
 
-import { DataFreshness, ZtDiagnosisCard, clampPos, clearZtReviewCache, diagnosisLines, diagnosisPrompt, freshnessText } from '../src/client/ZtDiagnosisCard.tsx'
+import { DataFreshness, ZtDiagnosisCard, cacheStillFresh, clampPos, clearZtReviewCache, closeNote, diagnosisLines, diagnosisPrompt, freshnessText } from '../src/client/ZtDiagnosisCard.tsx'
+import { addWeekdays, hasOhlc, stateRuns } from '../src/client/ZtUi.tsx'
 
 const t = (key: MarketLocaleKey, params?: Record<string, unknown>): string =>
   params === undefined ? key : `${key} ${JSON.stringify(params)}`
@@ -113,6 +114,30 @@ describe('Z哥诊断卡', () => {
     expect(screen.queryByText(/港股仅作参考/)).not.toBeNull()
   })
 
+  it('缓存跨天、或跨过收盘（15:30）就失效', () => {
+    const at = (d: number, h: number, m = 0) => new Date(2026, 10, d, h, m).getTime()
+    expect(cacheStillFresh(at(5, 9, 1), at(5, 11, 0))).toBe(true)
+    expect(cacheStillFresh(at(5, 9, 1), at(5, 20, 0))).toBe(false)
+    expect(cacheStillFresh(at(5, 16, 0), at(5, 20, 0))).toBe(true)
+    expect(cacheStillFresh(at(4, 21, 0), at(5, 9, 0))).toBe(false)
+  })
+
+  it('价格不是今天的写明哪天收盘；走势按多空分段；工作日推算', () => {
+    const now = new Date(2026, 10, 5, 10, 0)
+    expect(closeNote(t, '20261104', now)).toBe('zt.closeOf {"date":"11-04"}')
+    expect(closeNote(t, '20261105', now)).toBeUndefined()
+    expect(stateRuns(['BEAR', 'BEAR', 'BULL', 'BULL', 'BEAR'])).toEqual([
+      { bull: false, from: 0, to: 1 }, { bull: true, from: 1, to: 3 }, { bull: false, from: 3, to: 4 },
+    ])
+    expect(addWeekdays('20261104', 5)).toBe('2026-11-11')
+  })
+
+  it('活跃市值：每根都有开高低收才画 K 线', () => {
+    const bar = { date: '2026-11-04', open: 1, high: 2, low: 0.5, close: 1.5, state: 'BULL' }
+    expect(hasOhlc([bar, { ...bar, date: '2026-11-05' }])).toBe(true)
+    expect(hasOhlc([bar, { date: '2026-11-05', close: 1.6 }])).toBe(false)
+  })
+
   it('浮窗拖动时留在屏幕内（至少露出标题栏）', () => {
     const view = { width: 1600, height: 900 }
     expect(clampPos({ x: -50, y: -20 }, 340, view)).toEqual({ x: 0, y: 0 })
@@ -140,7 +165,7 @@ describe('数据新鲜度', () => {
   it('显示本地日线与活跃市值的日期；接口失败时不显示', async () => {
     net.status = { localThrough: '2026-11-03', amvThrough: '2026-11-03' }
     render(<DataFreshness t={t} symbol="600795.SH" lastBarDate="2026-11-04" />)
-    await waitFor(() => { expect(screen.queryByRole('status')?.textContent).toBe('fresh.tail {"date":"2026-11-03"} · fresh.amv {"date":"2026-11-03"}') })
+    await waitFor(() => { expect(screen.queryByRole('status')?.getAttribute('title')).toBe('fresh.tail {"date":"2026-11-03"} · fresh.amv {"date":"2026-11-03"}') })
     cleanup()
     net.status = null
     render(<DataFreshness t={t} symbol="600795.SH" lastBarDate={null} />)

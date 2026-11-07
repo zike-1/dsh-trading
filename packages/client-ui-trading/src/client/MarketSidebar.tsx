@@ -266,6 +266,14 @@ export function MarketSidebar({
     }
   }, [draft, tab, activeForm])
 
+  // 表头写明走势的时间范围：都是分时 →「分时」；都降级成日 K →「近 N 日」；混着 →「分时/日」。
+  const trendHeader = useMemo(() => {
+    const modes = new Set(rows.map(row => series[rowKey(row.market, row.symbol)]?.mode).filter(mode => mode !== undefined))
+    if (modes.size === 1 && modes.has('daily')) return t('header.trendDaily', { n: DAILY_FALLBACK_LIMIT })
+    if (modes.size > 1) return t('header.trendMixed')
+    return t('header.trendIntraday')
+  }, [rows, series, t])
+
   // 参考序列（迷你走势 + 昨收兜底）：日内分钟线 60s 轮询；分钟线不可用（如腾讯
   // 公开端港股）降级日 K，TTL 内复用后再重试分钟线。prevClose 仅为快照缺官方锚点
   // 时的兜底（日 K 序列可能缺最新收盘 bar，倒数第二根会错位一个交易日，故永远让位于
@@ -622,7 +630,7 @@ export function MarketSidebar({
       {/* 列表表头 */}
       <div className={css.listHeader}>
         <span>{t('header.symbol')}</span>
-        <span className={css.listHeaderColCenter}>{t('header.trend')}</span>
+        <span className={css.listHeaderColCenter} title={t('header.trendHint')}>{trendHeader}</span>
         <span className={css.listHeaderColRight}>{t('header.priceChange')}</span>
       </div>
 
@@ -676,7 +684,16 @@ export function MarketSidebar({
                       </span>
                     </span>
                     <span className={css.spark}>
-                      <Sparkline values={ref?.closes ?? EMPTY_CLOSES} {...(ref?.xFractions !== undefined ? { xFractions: ref.xFractions } : {})} width={56} height={22} up={up} colorMode={colorMode} />
+                      <Sparkline
+                        values={ref?.closes ?? EMPTY_CLOSES}
+                        {...(ref?.xFractions !== undefined ? { xFractions: ref.xFractions } : {})}
+                        width={56}
+                        height={22}
+                        up={up}
+                        colorMode={colorMode}
+                        // 分时走势画一条很浅的昨收线：形状和涨跌幅方向对得上（日 K 降级不画）
+                        baseline={ref?.mode === 'intraday' ? (ticker?.prevClose ?? ref.prevClose) : undefined}
+                      />
                     </span>
                     <span className={css.quote}>
                       <span className={css.price} style={{ color: directionColor(pct ?? 0, colorMode) }}>{fmtPrice(price)}</span>

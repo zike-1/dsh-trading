@@ -180,6 +180,17 @@ function inferMarketFromSymbol(symbol?: string): MarketId | undefined {
 /** 信号 reason 的币种符号（按市场；crypto 以 USD 计价近似）。 */
 const CURRENCY_SYMBOL: Record<MarketId, string> = { cn: '¥', hk: 'HK$', us: '$', crypto: '$', futures: '¥', global: '$' }
 
+/** 图例小样：和主图曲线同色、同线型（实线 / 点线 / 圆点）的一小段。 */
+function LegendSwatch({ color, style, width }: { color: string; style: 'solid' | 'dotted' | 'circles'; width: number }) {
+  return (
+    <svg className={css.legendSwatch} width="16" height="8" viewBox="0 0 16 8" aria-hidden="true">
+      {style === 'circles'
+        ? [2, 8, 14].map(x => <circle key={x} cx={x} cy={4} r={1.3} fill={color} />)
+        : <line x1={0} x2={16} y1={4} y2={4} stroke={color} strokeWidth={Math.max(1.2, Math.min(width, 3))} strokeDasharray={style === 'dotted' ? '2 2' : undefined} />}
+    </svg>
+  )
+}
+
 export function QuoteStage({ t, useSelection, useChart, toggleIndicator, setIndicatorParams, setIndicatorVisible, setIndicatorScope, removeIndicator, deleteIndicator, guiSessionId }: QuoteStageProps) {
   const instrument = useSelection(value => value.instrument)
   const market: MarketId | undefined = (instrument?.market && ['crypto', 'us', 'cn', 'hk', 'futures', 'global'].includes(instrument.market))
@@ -360,6 +371,7 @@ export function QuoteStage({ t, useSelection, useChart, toggleIndicator, setIndi
   const [rangeMode, setRangeMode] = useState(false)
   const [rangeSelection, setRangeSelection] = useState<{ start: number; end: number } | null>(null)
   const markerTexts = useMemo(() => ({ entry: t('trade.buy'), exit: t('trade.sell') }), [t])
+  const axisCaption = useMemo(() => ({ text: t('chart.axisCaption'), hint: t('chart.axisHint') }), [t])
 
   // ── 新闻与公告（issue #37）────────────────────────────────────
   const [newsItems, setNewsItems] = useState<ClientNewsItem[] | null>(null)
@@ -1061,7 +1073,7 @@ export function QuoteStage({ t, useSelection, useChart, toggleIndicator, setIndi
 
   // 数据新鲜度 + 更新时间：图表页签放在「昨收 开 高 低 量」同一行的右侧，其余页签留在标题行
   const metaNode = (
-    <span className={css.meta}>
+    <span className={`${css.meta} ${css.metaShrink}`}>
       {market === 'cn' && symbol !== undefined && (
         <DataFreshness
           t={t}
@@ -1087,6 +1099,7 @@ export function QuoteStage({ t, useSelection, useChart, toggleIndicator, setIndi
           <span>{fmtChange(stats.change)}</span>
           <span>{fmtPercent(stats.pct)}</span>
         </span>
+        {viewTab !== 'chart' && metaNode}
         {/* 行情板块页签：图表 | 基本面 | 新闻 | 公告（富途牛牛式，页签随报价头同行）；
             衍生品仅 crypto（issue #54），基本面仅非 crypto（加密资产无标准财报，2026-09-04） */}
         <div className={css.stageTabs} role="tablist" aria-label="quote section">
@@ -1145,8 +1158,6 @@ export function QuoteStage({ t, useSelection, useChart, toggleIndicator, setIndi
             {t('quote.tab.announcements')}
           </button>
         </div>
-        {viewTab !== 'chart' && metaNode}
-
       </div>
 
       {/* TradFi 合约明示位（图表页签）：合成合约、非股票本身；24/7 报价 vs 股票闭市时段 */}
@@ -1339,12 +1350,26 @@ export function QuoteStage({ t, useSelection, useChart, toggleIndicator, setIndi
           indicator-readout.ts 模块头注）。 */}
       {viewTab === 'chart' && mainOverlays.length > 0 && (
         <div className={css.indicatorReadout}>
-          {readoutItems(mainOverlays, readoutIndex).map(item => (
-            <span key={item.key} style={{ color: item.color, fontWeight: 500 }}>
-              {item.title} {item.label}:{' '}
-              <span className={css.readoutValue} style={{ minWidth: `${item.width}ch` }}>{item.text}</span>
-            </span>
-          ))}
+              {(() => {
+            // 画线的在前，各带一段同色同线型的小样；只显示读数的（评分）另起一段
+            const items = readoutItems(mainOverlays, readoutIndex)
+            const drawn = items.filter(item => item.swatch !== null)
+            const valueOnly = items.filter(item => item.swatch === null)
+            const render = (item: (typeof items)[number]) => (
+              <span key={item.key} style={{ color: item.color, fontWeight: 500 }}>
+                {item.swatch !== null && <LegendSwatch color={item.color} style={item.swatch.style} width={item.swatch.width} />}
+                {item.showTitle ? `${item.title} ` : ''}{item.label}:{' '}
+                <span className={css.readoutValue} style={{ minWidth: `${item.width}ch` }}>{item.text}</span>
+              </span>
+            )
+            return (
+              <>
+                {drawn.map(render)}
+                {drawn.length > 0 && valueOnly.length > 0 && <span className={css.legendSep} aria-hidden="true" />}
+                {valueOnly.map(render)}
+              </>
+            )
+          })()}
         </div>
       )}
 
@@ -1381,6 +1406,8 @@ export function QuoteStage({ t, useSelection, useChart, toggleIndicator, setIndi
                 knowledgeMarkers={markerState.showKnowledgeEvents ? knowledgeMarkers : undefined}
                 onMarkerHover={setMarkerHover}
                 markerTexts={markerTexts}
+                axisCaption={axisCaption}
+                signalListTitle={t('chart.signalList')}
                 liveText={t('indicator.live')}
                 onBarContextMenu={openKdasMenu}
               />

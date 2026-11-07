@@ -13,8 +13,10 @@ function SparklineImpl(props: {
   height: number
   up: boolean
   colorMode?: ColorMode
+  /** 可选：昨收参考线（分时走势用；纳入纵向范围，线在它上方 = 高于昨收）。 */
+  baseline?: number | undefined
 }): React.JSX.Element {
-  const { values, xFractions, width, height, up, colorMode } = props
+  const { values, xFractions, width, height, up, colorMode, baseline } = props
   const gradientId = useId()
 
   if (values.length < 2) {
@@ -26,6 +28,11 @@ function SparklineImpl(props: {
   for (const value of values) {
     if (value < min) min = value
     if (value > max) max = value
+  }
+  const hasBaseline = baseline !== undefined && Number.isFinite(baseline) && baseline > 0
+  if (hasBaseline) {
+    min = Math.min(min, baseline as number)
+    max = Math.max(max, baseline as number)
   }
 
   const span = max - min
@@ -56,6 +63,18 @@ function SparklineImpl(props: {
         </linearGradient>
       </defs>
       <path d={areaPath} fill={`url(#${gradientId})`} />
+      {hasBaseline && span !== 0 && (
+        <line
+          x1={0}
+          x2={width}
+          y1={((1 - ((baseline as number) - min) / span) * (height - 4) + 2).toFixed(2)}
+          y2={((1 - ((baseline as number) - min) / span) * (height - 4) + 2).toFixed(2)}
+          stroke="rgba(138, 143, 153, 0.55)"
+          strokeWidth={0.8}
+          strokeDasharray="2 2"
+          data-dshtrading-spark-baseline=""
+        />
+      )}
       <polyline points={strokePoints} fill="none" stroke={strokeColor} strokeWidth={1.3} strokeLinecap="round" strokeLinejoin="round" />
     </svg>
   )
